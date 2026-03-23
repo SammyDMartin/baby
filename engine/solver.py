@@ -167,7 +167,7 @@ def _parse_single(text):
 
 # ── general navigation engine ────────────────────────────────────────────────
 
-def _navigate_via_doors(env, info, final_fn, max_iters=25):
+def _navigate_via_doors(env, info, final_fn, max_iters=80):
     """Iteratively open/unlock doors until final_fn(info) returns actions.
     Handles: closed doors, locked doors (if carrying key), and blocked doors."""
     all_results = []

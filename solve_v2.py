@@ -1004,41 +1004,41 @@ def _solve_and_record_pickup(env, info, sg):
             if direct_key:
                 k, ka = direct_key
                 r1 = _record_execute(env, ka + ['pickup'])
-                    if r1['done']:
-                        return r1
-                    info2 = get_info(env)
-                    da = bfs_to_face(info2['grid'], info2['pos'], info2['dir'], ld['pos'])
-                    if da is not None:
-                        r2 = _record_execute(env, da + ['toggle', 'forward'])
-                        if r2['done']:
-                            return {'actions': r1['actions'] + r2['actions'],
-                                    'done': True, 'reward': r1['reward'] + r2['reward']}
-                        
-                        # DROP THE KEY — can't pick up target while carrying it
-                        info_drop = get_info(env)
-                        drop_acts = _drop_carried(env, info_drop)
-                        if drop_acts:
-                            r_drop = _record_execute(env, drop_acts)
-                        else:
-                            r_drop = {'actions': [], 'done': False, 'reward': 0}
-                        
-                        info3 = get_info(env)
-                        
-                        def check_target(i):
-                            ts = find_objects(i['grid'], obj_type=obj_type, color=color)
-                            if not ts and color:
-                                ts = find_objects(i['grid'], obj_type=obj_type)
-                            for t in ts:
-                                a = bfs_to_face(i['grid'], i['pos'], i['dir'], t['pos'])
-                                if a is not None:
-                                    return a + ['pickup']
-                            return None
-                        
-                        r3 = _solve_record_via_doors(env, info3, check_target)
-                        if r3:
-                            all_a = r1['actions'] + r2['actions'] + r_drop['actions'] + r3['actions']
-                            all_r = r1['reward'] + r2['reward'] + r_drop['reward'] + r3['reward']
-                            return {'actions': all_a, 'done': r3['done'], 'reward': all_r}
+                if r1['done']:
+                    return r1
+                info2 = get_info(env)
+                da = bfs_to_face(info2['grid'], info2['pos'], info2['dir'], ld['pos'])
+                if da is not None:
+                    r2 = _record_execute(env, da + ['toggle', 'forward'])
+                    if r2['done']:
+                        return {'actions': r1['actions'] + r2['actions'],
+                                'done': True, 'reward': r1['reward'] + r2['reward']}
+
+                    # DROP THE KEY — can't pick up target while carrying it
+                    info_drop = get_info(env)
+                    drop_acts = _drop_carried(env, info_drop)
+                    if drop_acts:
+                        r_drop = _record_execute(env, drop_acts)
+                    else:
+                        r_drop = {'actions': [], 'done': False, 'reward': 0}
+
+                    info3 = get_info(env)
+
+                    def check_target(i):
+                        ts = find_objects(i['grid'], obj_type=obj_type, color=color)
+                        if not ts and color:
+                            ts = find_objects(i['grid'], obj_type=obj_type)
+                        for t in ts:
+                            a = bfs_to_face(i['grid'], i['pos'], i['dir'], t['pos'])
+                            if a is not None:
+                                return a + ['pickup']
+                        return None
+
+                    r3 = _solve_record_via_doors(env, info3, check_target)
+                    if r3:
+                        all_a = r1['actions'] + r2['actions'] + r_drop['actions'] + r3['actions']
+                        all_r = r1['reward'] + r2['reward'] + r_drop['reward'] + r3['reward']
+                        return {'actions': all_a, 'done': r3['done'], 'reward': all_r}
     
     def check_pickup(i):
         ts = find_objects(i['grid'], obj_type=obj_type, color=color)

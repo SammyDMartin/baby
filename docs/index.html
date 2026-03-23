@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BabyAI Solver Visualizer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; background: #0a0a0f; color: #e0e0e0; min-height: 100vh; }
+
+.header { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 24px 32px; border-bottom: 1px solid #2a2a4a; }
+.header h1 { font-size: 24px; color: #fff; margin-bottom: 4px; }
+.header .subtitle { font-size: 13px; color: #888; }
+.header .stats { margin-top: 12px; display: flex; gap: 24px; }
+.stat { display: flex; flex-direction: column; }
+.stat-value { font-size: 28px; font-weight: bold; color: #4ade80; }
+.stat-label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+/* Level cards */
+.section-title { font-size: 14px; color: #888; text-transform: uppercase; letter-spacing: 2px; margin: 24px 0 12px; }
+.levels-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.level-card { background: #12121f; border: 1px solid #2a2a3a; border-radius: 8px; padding: 16px; cursor: pointer; transition: all 0.15s; }
+.level-card:hover { border-color: #4a4a6a; transform: translateY(-1px); }
+.level-card.selected { border-color: #4ade80; background: #151525; }
+.level-card .name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.level-card .desc { font-size: 11px; color: #666; margin-bottom: 8px; }
+.level-card .result { display: flex; align-items: center; gap: 8px; }
+.level-card .bar-bg { flex: 1; height: 6px; background: #1a1a2a; border-radius: 3px; overflow: hidden; }
+.level-card .bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.level-card .rate { font-size: 12px; font-weight: 600; min-width: 40px; text-align: right; }
+.difficulty { display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 3px; margin-right: 6px; }
+.d-easy { background: #0d3320; color: #4ade80; }
+.d-med { background: #332d0d; color: #facc15; }
+.d-hard { background: #331a0d; color: #fb923c; }
+.d-nightmare { background: #330d0d; color: #f87171; }
+
+/* Detail view */
+.detail-panel { background: #12121f; border: 1px solid #2a2a3a; border-radius: 8px; padding: 24px; margin-top: 16px; display: none; }
+.detail-panel.visible { display: block; }
+.detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.detail-header h2 { font-size: 18px; }
+.close-btn { background: none; border: 1px solid #3a3a4a; color: #888; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-family: inherit; }
+.close-btn:hover { border-color: #666; color: #fff; }
+
+.seed-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.seed-tab { padding: 6px 16px; background: #1a1a2a; border: 1px solid #2a2a3a; border-radius: 4px; cursor: pointer; font-family: inherit; color: #888; font-size: 12px; }
+.seed-tab.active { border-color: #4ade80; color: #4ade80; background: #0d2820; }
+.seed-tab.fail { border-color: #f87171; color: #f87171; }
+
+.run-info { margin-bottom: 16px; font-size: 13px; }
+.run-info .mission { color: #facc15; font-weight: 600; }
+.run-info .result-badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+.result-badge.success { background: #0d3320; color: #4ade80; }
+.result-badge.fail { background: #330d0d; color: #f87171; }
+
+/* Grid visualization */
+.grid-area { display: flex; gap: 24px; flex-wrap: wrap; }
+.grid-panel { flex: 1; min-width: 300px; }
+.grid-panel h3 { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.grid-canvas { border: 1px solid #2a2a3a; border-radius: 4px; background: #0a0a14; }
+
+/* Replay controls */
+.replay-controls { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
+.replay-btn { background: #1a1a2a; border: 1px solid #3a3a4a; color: #e0e0e0; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 13px; }
+.replay-btn:hover { border-color: #4ade80; color: #4ade80; }
+.replay-btn.active { background: #0d2820; border-color: #4ade80; color: #4ade80; }
+.step-display { font-size: 13px; color: #888; min-width: 120px; }
+.step-slider { flex: 1; accent-color: #4ade80; }
+
+/* Action list */
+.action-list { margin-top: 16px; }
+.action-list h3 { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.actions-wrap { display: flex; flex-wrap: wrap; gap: 4px; max-height: 120px; overflow-y: auto; padding: 8px; background: #0a0a14; border-radius: 4px; }
+.action-chip { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: #1a1a2a; color: #888; }
+.action-chip.current { background: #0d2820; color: #4ade80; border: 1px solid #4ade80; }
+.action-chip.past { color: #555; }
+
+.loading { text-align: center; padding: 48px; color: #666; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>BabyAI Solver Visualizer</h1>
+  <div class="subtitle">Programmatic solver for BabyAI gridworld levels + custom nightmare challenges</div>
+  <div class="stats">
+    <div class="stat"><span class="stat-value" id="overall-rate">--</span><span class="stat-label">Solve Rate</span></div>
+    <div class="stat"><span class="stat-value" id="overall-wins">--</span><span class="stat-label">Levels Solved</span></div>
+    <div class="stat"><span class="stat-value" id="total-levels">--</span><span class="stat-label">Total Levels</span></div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="section-title">Standard Levels</div>
+  <div class="levels-grid" id="standard-levels"></div>
+
+  <div class="section-title">Nightmare Levels</div>
+  <div class="levels-grid" id="nightmare-levels"></div>
+
+  <div class="detail-panel" id="detail-panel">
+    <div class="detail-header">
+      <h2 id="detail-title">--</h2>
+      <button class="close-btn" onclick="closeDetail()">Close</button>
+    </div>
+    <div class="seed-tabs" id="seed-tabs"></div>
+    <div class="run-info" id="run-info"></div>
+    <div class="replay-controls">
+      <button class="replay-btn" id="btn-play" onclick="togglePlay()">&#9654; Play</button>
+      <button class="replay-btn" onclick="stepBack()">&#9664; Step</button>
+      <button class="replay-btn" onclick="stepForward()">Step &#9654;</button>
+      <button class="replay-btn" onclick="goToStart()">|&#9664;</button>
+      <button class="replay-btn" onclick="goToEnd()">&#9654;|</button>
+      <span class="step-display" id="step-display">Step 0 / 0</span>
+      <input type="range" class="step-slider" id="step-slider" min="0" max="0" value="0" oninput="seekTo(this.value)">
+    </div>
+    <div class="grid-area">
+      <div class="grid-panel">
+        <h3 id="grid-label">Grid State</h3>
+        <canvas class="grid-canvas" id="grid-canvas" width="480" height="480"></canvas>
+      </div>
+    </div>
+    <div class="action-list">
+      <h3>Action Sequence</h3>
+      <div class="actions-wrap" id="actions-wrap"></div>
+    </div>
+  </div>
+</div>
+
+<div class="loading" id="loading">Loading solver data...</div>
+
+<script>
+let DATA = null;
+let selectedLevel = null;
+let selectedRun = null;
+let currentStep = 0;
+let playing = false;
+let playInterval = null;
+
+const CELL_COLORS = {
+  wall: '#2a2a3a',
+  empty: '#0d0d18',
+  door_open: '#1a3a1a',
+  door_closed: '#3a2a1a',
+  door_locked: '#3a1a1a',
+  goal: '#1a3a1a',
+  lava: '#3a0a0a',
+};
+const OBJ_COLORS = {
+  red: '#e74c3c', green: '#2ecc71', blue: '#3498db',
+  purple: '#9b59b6', yellow: '#f1c40f', grey: '#95a5a6',
+};
+const DIR_ARROWS = {0: [1,0], 1: [0,1], 2: [-1,0], 3: [0,-1]};
+
+function difficultyClass(d) {
+  if (d <= 3) return 'd-easy';
+  if (d <= 6) return 'd-med';
+  if (d <= 9) return 'd-hard';
+  return 'd-nightmare';
+}
+
+function difficultyLabel(d) {
+  if (d <= 3) return 'Easy';
+  if (d <= 6) return 'Medium';
+  if (d <= 9) return 'Hard';
+  return 'Nightmare';
+}
+
+function barColor(rate) {
+  if (rate >= 1) return '#4ade80';
+  if (rate > 0) return '#facc15';
+  return '#f87171';
+}
+
+function renderLevelCard(level, idx) {
+  const card = document.createElement('div');
+  card.className = 'level-card';
+  card.dataset.idx = idx;
+  card.onclick = () => selectLevel(idx);
+
+  const dc = difficultyClass(level.difficulty);
+  const dl = difficultyLabel(level.difficulty);
+  const bc = barColor(level.rate);
+  const pct = Math.round(level.rate * 100);
+
+  card.innerHTML = `
+    <div class="name"><span class="difficulty ${dc}">${dl} ${level.difficulty}</span>${level.name}</div>
+    <div class="desc">${level.desc}</div>
+    <div class="result">
+      <div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${bc}"></div></div>
+      <span class="rate" style="color:${bc}">${level.wins}/${level.total}</span>
+    </div>
+  `;
+  return card;
+}
+
+function renderDashboard() {
+  const stdGrid = document.getElementById('standard-levels');
+  const nmGrid = document.getElementById('nightmare-levels');
+  stdGrid.innerHTML = '';
+  nmGrid.innerHTML = '';
+
+  DATA.levels.forEach((lvl, i) => {
+    const card = renderLevelCard(lvl, i);
+    if (lvl.difficulty >= 10) {
+      nmGrid.appendChild(card);
+    } else {
+      stdGrid.appendChild(card);
+    }
+  });
+
+  document.getElementById('overall-rate').textContent = Math.round(DATA.overall_rate * 100) + '%';
+  document.getElementById('overall-wins').textContent = DATA.total_wins + '/' + DATA.total_tests;
+  document.getElementById('total-levels').textContent = DATA.levels.length;
+  document.getElementById('loading').style.display = 'none';
+}
+
+function selectLevel(idx) {
+  selectedLevel = DATA.levels[idx];
+  document.querySelectorAll('.level-card').forEach(c => c.classList.remove('selected'));
+  document.querySelector(`.level-card[data-idx="${idx}"]`).classList.add('selected');
+
+  const panel = document.getElementById('detail-panel');
+  panel.classList.add('visible');
+  document.getElementById('detail-title').textContent = selectedLevel.name;
+
+  // Seed tabs
+  const tabs = document.getElementById('seed-tabs');
+  tabs.innerHTML = '';
+  selectedLevel.runs.forEach((run, i) => {
+    const tab = document.createElement('button');
+    tab.className = 'seed-tab' + (run.success ? '' : ' fail');
+    tab.textContent = `Seed ${run.seed} ${run.success ? '✓' : '✗'}`;
+    tab.onclick = () => selectRun(i);
+    tabs.appendChild(tab);
+  });
+
+  selectRun(0);
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function selectRun(idx) {
+  stopPlay();
+  selectedRun = selectedLevel.runs[idx];
+  currentStep = 0;
+
+  document.querySelectorAll('.seed-tab').forEach((t, i) => {
+    t.classList.toggle('active', i === idx);
+  });
+
+  const info = document.getElementById('run-info');
+  const badge = selectedRun.success ? '<span class="result-badge success">SUCCESS</span>' : '<span class="result-badge fail">FAILED</span>';
+  info.innerHTML = `<span class="mission">"${selectedRun.mission}"</span> &nbsp; ${badge} &nbsp; ${selectedRun.num_steps} steps`;
+
+  const slider = document.getElementById('step-slider');
+  slider.max = selectedRun.actions.length;
+  slider.value = 0;
+
+  renderActions();
+  renderGrid();
+}
+
+// Client-side action simulation for replay
+function simulateGrid(initialGrid, actions, upToStep) {
+  // Deep copy initial grid
+  const grid = JSON.parse(JSON.stringify(initialGrid));
+  const agent = grid.agent;
+  const DIR_DX = {0:1, 1:0, 2:-1, 3:0};
+  const DIR_DY = {0:0, 1:1, 2:0, 3:-1};
+
+  function getCellIdx(x, y) {
+    return grid.cells.findIndex(c => c.x === x && c.y === y);
+  }
+
+  for (let i = 0; i < Math.min(upToStep, actions.length); i++) {
+    const a = actions[i];
+    if (a === 'left') {
+      agent.dir = (agent.dir + 3) % 4;
+    } else if (a === 'right') {
+      agent.dir = (agent.dir + 1) % 4;
+    } else if (a === 'forward') {
+      const nx = agent.x + DIR_DX[agent.dir];
+      const ny = agent.y + DIR_DY[agent.dir];
+      const idx = getCellIdx(nx, ny);
+      if (idx >= 0) {
+        const cell = grid.cells[idx];
+        if (cell.type === 'empty' || (cell.type === 'door' && cell.is_open)) {
+          agent.x = nx;
+          agent.y = ny;
+        }
+      }
+    } else if (a === 'toggle') {
+      const fx = agent.x + DIR_DX[agent.dir];
+      const fy = agent.y + DIR_DY[agent.dir];
+      const idx = getCellIdx(fx, fy);
+      if (idx >= 0 && grid.cells[idx].type === 'door') {
+        const door = grid.cells[idx];
+        if (door.is_locked && grid.carrying && grid.carrying.type === 'key' && grid.carrying.color === door.color) {
+          door.is_locked = false;
+          door.is_open = true;
+          grid.carrying = null;
+        } else if (!door.is_locked && !door.is_open) {
+          door.is_open = true;
+        } else if (door.is_open) {
+          door.is_open = false;
+        }
+      }
+    } else if (a === 'pickup') {
+      const fx = agent.x + DIR_DX[agent.dir];
+      const fy = agent.y + DIR_DY[agent.dir];
+      const idx = getCellIdx(fx, fy);
+      if (idx >= 0) {
+        const cell = grid.cells[idx];
+        if (['key', 'ball', 'box'].includes(cell.type) && !grid.carrying) {
+          grid.carrying = { type: cell.type, color: cell.color };
+          grid.cells[idx] = { x: fx, y: fy, type: 'empty' };
+        }
+      }
+    } else if (a === 'drop') {
+      const fx = agent.x + DIR_DX[agent.dir];
+      const fy = agent.y + DIR_DY[agent.dir];
+      const idx = getCellIdx(fx, fy);
+      if (idx >= 0 && grid.cells[idx].type === 'empty' && grid.carrying) {
+        grid.cells[idx] = { x: fx, y: fy, type: grid.carrying.type, color: grid.carrying.color };
+        grid.carrying = null;
+      }
+    }
+  }
+  agent.dir_name = ['right','down','left','up'][agent.dir];
+  return grid;
+}
+
+function getGridAtStep(step) {
+  if (!selectedRun) return null;
+  if (step === 0) return selectedRun.initial_grid;
+  // Use client-side simulation for smooth replay
+  return simulateGrid(selectedRun.initial_grid, selectedRun.actions, step);
+}
+
+function renderGrid() {
+  const canvas = document.getElementById('grid-canvas');
+  const ctx = canvas.getContext('2d');
+  const grid = getGridAtStep(currentStep);
+  if (!grid) return;
+
+  const w = grid.width;
+  const h = grid.height;
+  const cellSize = Math.min(Math.floor(480 / Math.max(w, h)), 32);
+  canvas.width = w * cellSize;
+  canvas.height = h * cellSize;
+
+  // Draw cells
+  for (const cell of grid.cells) {
+    const x = cell.x * cellSize;
+    const y = cell.y * cellSize;
+
+    // Background
+    let bg = CELL_COLORS.empty;
+    if (cell.type === 'wall') bg = CELL_COLORS.wall;
+    else if (cell.type === 'lava') bg = CELL_COLORS.lava;
+
+    ctx.fillStyle = bg;
+    ctx.fillRect(x, y, cellSize, cellSize);
+
+    // Objects
+    if (cell.type === 'door') {
+      const c = OBJ_COLORS[cell.color] || '#888';
+      if (cell.is_open) {
+        ctx.fillStyle = c + '40';
+        ctx.fillRect(x, y, cellSize, cellSize);
+        ctx.strokeStyle = c;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 2, y + 2, cellSize - 4, cellSize - 4);
+      } else {
+        ctx.fillStyle = cell.is_locked ? c + '80' : c + '60';
+        ctx.fillRect(x, y, cellSize, cellSize);
+        if (cell.is_locked) {
+          // Lock symbol
+          ctx.fillStyle = '#000';
+          ctx.font = `${cellSize * 0.5}px monospace`;
+          ctx.textAlign = 'center';
+          ctx.fillText('🔒', x + cellSize/2, y + cellSize * 0.65);
+        }
+      }
+    } else if (cell.type === 'key') {
+      drawKey(ctx, x, y, cellSize, OBJ_COLORS[cell.color] || '#888');
+    } else if (cell.type === 'ball') {
+      drawBall(ctx, x, y, cellSize, OBJ_COLORS[cell.color] || '#888');
+    } else if (cell.type === 'box') {
+      drawBox(ctx, x, y, cellSize, OBJ_COLORS[cell.color] || '#888');
+    } else if (cell.type === 'goal') {
+      ctx.fillStyle = '#4ade80' + '40';
+      ctx.fillRect(x, y, cellSize, cellSize);
+      ctx.fillStyle = '#4ade80';
+      ctx.font = `${cellSize * 0.6}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText('G', x + cellSize/2, y + cellSize * 0.7);
+    }
+
+    // Grid lines
+    ctx.strokeStyle = '#1a1a2a';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(x, y, cellSize, cellSize);
+  }
+
+  // Draw agent
+  const agent = grid.agent;
+  if (agent) {
+    const ax = agent.x * cellSize;
+    const ay = agent.y * cellSize;
+    const cx = ax + cellSize / 2;
+    const cy = ay + cellSize / 2;
+    const r = cellSize * 0.35;
+
+    // Agent body
+    ctx.fillStyle = '#4ade80';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Direction indicator
+    const [dx, dy] = DIR_ARROWS[agent.dir];
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + dx * r * 0.9, cy + dy * r * 0.9);
+    ctx.stroke();
+
+    // Arrow head
+    const tipX = cx + dx * r * 0.9;
+    const tipY = cy + dy * r * 0.9;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Carrying indicator
+  if (grid.carrying) {
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(4, canvas.height - 24, 120, 20);
+    ctx.fillStyle = OBJ_COLORS[grid.carrying.color] || '#888';
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`Carrying: ${grid.carrying.color} ${grid.carrying.type}`, 8, canvas.height - 9);
+  }
+
+  // Step info
+  document.getElementById('step-display').textContent = `Step ${currentStep} / ${selectedRun.actions.length}`;
+  document.getElementById('step-slider').value = currentStep;
+
+  // Label
+  const label = document.getElementById('grid-label');
+  if (currentStep === 0) label.textContent = 'Initial State';
+  else if (currentStep >= selectedRun.actions.length) label.textContent = 'Final State';
+  else label.textContent = `After: ${selectedRun.actions[currentStep - 1]}`;
+}
+
+function drawKey(ctx, x, y, s, color) {
+  const cx = x + s/2, cy = y + s/2;
+  ctx.fillStyle = color;
+  // Key head (circle)
+  ctx.beginPath();
+  ctx.arc(cx, cy - s*0.1, s*0.18, 0, Math.PI * 2);
+  ctx.fill();
+  // Key shaft
+  ctx.fillRect(cx - s*0.04, cy, s*0.08, s*0.25);
+  // Key teeth
+  ctx.fillRect(cx, cy + s*0.15, s*0.1, s*0.04);
+}
+
+function drawBall(ctx, x, y, s, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x + s/2, y + s/2, s*0.3, 0, Math.PI * 2);
+  ctx.fill();
+  // Highlight
+  ctx.fillStyle = '#fff4';
+  ctx.beginPath();
+  ctx.arc(x + s*0.4, y + s*0.4, s*0.08, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawBox(ctx, x, y, s, color) {
+  const m = s * 0.2;
+  ctx.fillStyle = color;
+  ctx.fillRect(x + m, y + m, s - 2*m, s - 2*m);
+  ctx.strokeStyle = '#0004';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + m, y + m, s - 2*m, s - 2*m);
+}
+
+function renderActions() {
+  const wrap = document.getElementById('actions-wrap');
+  wrap.innerHTML = '';
+  if (!selectedRun) return;
+  selectedRun.actions.forEach((a, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'action-chip';
+    if (i < currentStep) chip.classList.add('past');
+    if (i === currentStep - 1) chip.classList.add('current');
+    chip.textContent = a;
+    wrap.appendChild(chip);
+  });
+  // Scroll current into view
+  const cur = wrap.querySelector('.current');
+  if (cur) cur.scrollIntoView({ block: 'nearest' });
+}
+
+function stepForward() {
+  if (!selectedRun) return;
+  if (currentStep < selectedRun.actions.length) {
+    currentStep++;
+    renderGrid();
+    renderActions();
+  }
+}
+
+function stepBack() {
+  if (currentStep > 0) {
+    currentStep--;
+    renderGrid();
+    renderActions();
+  }
+}
+
+function goToStart() {
+  currentStep = 0;
+  renderGrid();
+  renderActions();
+}
+
+function goToEnd() {
+  if (!selectedRun) return;
+  currentStep = selectedRun.actions.length;
+  renderGrid();
+  renderActions();
+}
+
+function seekTo(val) {
+  currentStep = parseInt(val);
+  renderGrid();
+  renderActions();
+}
+
+function togglePlay() {
+  if (playing) {
+    stopPlay();
+  } else {
+    playing = true;
+    document.getElementById('btn-play').classList.add('active');
+    document.getElementById('btn-play').innerHTML = '&#9646;&#9646; Pause';
+    playInterval = setInterval(() => {
+      if (currentStep >= selectedRun.actions.length) {
+        stopPlay();
+        return;
+      }
+      stepForward();
+    }, 200);
+  }
+}
+
+function stopPlay() {
+  playing = false;
+  if (playInterval) clearInterval(playInterval);
+  playInterval = null;
+  document.getElementById('btn-play').classList.remove('active');
+  document.getElementById('btn-play').innerHTML = '&#9654; Play';
+}
+
+function closeDetail() {
+  stopPlay();
+  document.getElementById('detail-panel').classList.remove('visible');
+  document.querySelectorAll('.level-card').forEach(c => c.classList.remove('selected'));
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === 'l') stepForward();
+  if (e.key === 'ArrowLeft' || e.key === 'h') stepBack();
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  if (e.key === 'Escape') closeDetail();
+  if (e.key === 'Home') goToStart();
+  if (e.key === 'End') goToEnd();
+});
+
+// Load data
+async function init() {
+  try {
+    const resp = await fetch('data.json');
+    DATA = await resp.json();
+    renderDashboard();
+  } catch (e) {
+    document.getElementById('loading').textContent = 'Error loading data: ' + e.message;
+  }
+}
+
+init();
+</script>
+</body>
+</html>

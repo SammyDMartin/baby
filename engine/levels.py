@@ -173,4 +173,6 @@ NIGHTMARE_LEVELS = [
      "desc": "3x3 rooms. Put-next-to then pickup. Multi-step inventory management across rooms."},
 ]
 
-ALL_LEVELS = STANDARD_LEVELS + NIGHTMARE_LEVELS
+from engine.impossible import IMPOSSIBLE_LEVELS
+
+ALL_LEVELS = STANDARD_LEVELS + NIGHTMARE_LEVELS + IMPOSSIBLE_LEVELS

@@ -1,23 +1,4 @@
-"""
-The Impossible Level: designed to defeat LLM spatial reasoning.
-
-Key insight: LLMs fail at COUNTING and DIRECTION TRACKING over long sequences.
-We don't need complex key puzzles (LLMs can reason about those).
-We need: huge grids where rooms look identical, long navigation sequences,
-and precise step-counting that any small error ruins.
-
-Design:
-- 6x6 room grid = 36 rooms, 26x26 cells
-- All doors closed (not locked) - just need to navigate through
-- Target in far corner behind many doors
-- Rooms filled with identically-colored distractor objects
-- Many paths but only a few are efficient
-- Total action sequence: 200-300+ steps
-- One wrong turn = 20+ wasted steps
-
-The programmatic BFS solver handles this instantly.
-An LLM producing 200+ correct actions by reading a 26x26 ASCII grid? Brutal.
-"""
+"""Impossible Labyrinth level definition."""
 import gymnasium as gym
 from gymnasium import register
 from minigrid.envs.babyai.core.roomgrid_level import RoomGridLevel

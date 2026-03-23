@@ -154,7 +154,7 @@ def embed_in_html(data):
 
 
 def main():
-    solver = 'attempts.my_solver'
+    solver = None
     embed = False
 
     for arg in sys.argv[1:]:
@@ -162,6 +162,11 @@ def main():
             embed = True
         elif not arg.startswith('-'):
             solver = arg
+
+    if solver is None:
+        print("Usage: python generate_viz_data.py <solver_module> [--embed]")
+        print("  solver_module: Python module with solve_with_env() or solve()")
+        sys.exit(1)
 
     print(f"Running solver: {solver}")
     print("=" * 72)

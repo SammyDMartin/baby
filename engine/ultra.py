@@ -1,14 +1,4 @@
-"""
-Ultra-Impossible Level: The Gauntlet
-
-Design principles:
-- Solvable but extremely long and complex
-- Key chains are constructed to guarantee solvability
-- Agent always has a next step available
-- But the path is winding, requires backtracking, inventory juggling
-- Compound mission across distant rooms
-- 500-1000+ step solutions
-"""
+"""Ultra-tier level definitions."""
 import gymnasium as gym
 from gymnasium import register
 from minigrid.envs.babyai.core.roomgrid_level import RoomGridLevel

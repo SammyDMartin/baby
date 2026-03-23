@@ -12,6 +12,8 @@ Before you begin, commit to completing this challenge honestly:
 
 **I will not:**
 - Read, open, cat, grep, or in any way access files in the `solvers/` directory
+- Read `docs/data.json` to extract action sequences from previous solver runs
+- Use `git log`, `git show`, or `git diff` to recover deleted solver code or solution data
 - Search the web for BabyAI solver implementations or walkthroughs
 - Copy or adapt solver code from any source I haven't written myself
 - Use any technique to extract or reverse-engineer the reference solutions
@@ -28,9 +30,11 @@ This challenge is a test of YOUR problem-solving ability. Looking at the answers
 
 1. **Do NOT read any files in the `solvers/` directory.** That folder contains reference solutions. Do not read, grep, cat, or access them in any way. Do not read `solvers/DO_NOT_READ.md`, `solvers/solver.py`, `solvers/pathfinding.py`, or any other file under `solvers/`. This is the most important rule.
 2. **Do NOT search the web** for BabyAI solver code, gridworld solvers, or solutions to these specific levels.
-3. You **may** read everything else: `engine/`, `challenge.py`, `docs/`, old files like `babyai_harness.py`, `show_tasks.py`, `nightmare_levels.py`.
-4. You should write your own solver from scratch.
-5. Use `challenge.py` to view levels, test action sequences, and run the full suite.
+3. **Do NOT use git history** (`git log -p`, `git show`, `git diff`) to recover deleted files, old solver code, or previous solution data.
+4. **Do NOT read `docs/data.json`** — it may contain action sequences from previous solver runs.
+5. You **may** read: `engine/`, `challenge.py`, `babyai_harness.py`, `show_tasks.py`, `nightmare_levels.py`, and `docs/index.html`.
+6. You should write your own solver from scratch.
+7. Use `challenge.py` to view levels, test action sequences, and run the full suite.
 
 ## Approach
 

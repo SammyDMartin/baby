@@ -1,85 +1,87 @@
-# BabyAI Solver & Visualizer
+# BabyAI Solver Challenge
 
-Programmatic solver for [BabyAI](https://github.com/Farama-Foundation/Minigrid) gridworld levels with an interactive web visualizer. Includes 17 standard levels + 4 custom nightmare challenges.
+A challenge benchmark for AI agents: build a solver for [BabyAI](https://github.com/Farama-Foundation/Minigrid) gridworld levels, from simple navigation up to a 36-room labyrinth.
 
-**[Live Demo →](https://sammydmartin.github.io/baby/)**
+**[Web Visualizer →](https://sammydmartin.github.io/baby/)** (see previous solver results animated step-by-step)
 
-## Results
+## The Challenge
 
-**95% solve rate** (60/63 level instances across 21 levels, 3 seeds each)
+22 levels across 5 difficulty tiers. Write a solver that produces action sequences to complete each level. Tested on 3 seeds per level (66 instances).
 
-| Category | Levels | Solve Rate |
-|----------|--------|------------|
-| Standard (Easy) | GoTo, Open Door, Pickup | 100% |
-| Standard (Medium) | Maze, Unlock, Put Next To | 100% |
-| Standard (Hard) | KeyCorridor, BlockedUnlock, Boss | 83% |
-| Nightmare | KeyChain, MegaMaze, Backtrack, Compound | 100% |
+| Tier | Levels | What's Involved |
+|------|--------|-----------------|
+| **Easy** (D1-3) | GoTo, Open Door | Navigate to objects, open doors. Single room. |
+| **Medium** (D4-6) | Pickup, Unlock, Maze | Pick up objects, use keys, multi-room navigation. |
+| **Hard** (D7-9) | KeyCorridor, BlockedUnlock, Boss | Keys behind doors, compound missions ("X and Y"). |
+| **Nightmare** (D10-13) | KeyChain, MegaMaze, Backtrack, Compound | Chained key deps, 16-room mazes, 150+ step solutions. |
+| **Impossible** (D15) | Labyrinth | 6x6 rooms (36 rooms), 25x25 grid, 60 doors, 200-500+ steps. |
+
+## Quick Start
+
+```bash
+pip install minigrid gymnasium
+
+# List all levels
+python challenge.py list
+
+# View a level
+python challenge.py show BabyAI-GoToRedBallNoDists-v0 42
+
+# Verify an action sequence
+python challenge.py verify BabyAI-GoToRedBallNoDists-v0 42 "right right forward"
+
+# Run your solver against all levels
+python challenge.py suite my_solver
+```
+
+**Full instructions are in [CLAUDE.md](CLAUDE.md)** — read that to understand the grid, actions, and how to write a solver.
 
 ## Project Structure
 
 ```
-engine/                 # Core solver module
-  grid.py              # Grid rendering (ASCII + JSON for web)
-  pathfinding.py       # BFS pathfinding, flood fill, door finding
-  solver.py            # Mission parser + subgoal solvers
-  levels.py            # Level definitions (standard + nightmare)
-docs/                  # GitHub Pages site
-  index.html           # Interactive visualizer
-  data.json            # Pre-generated solver results
-generate_data.py       # Runs solver, exports JSON for web
+CLAUDE.md              # Challenge instructions (read this first)
+challenge.py           # View levels, verify solutions, run test suite
+engine/                # Grid rendering + level definitions (fair game to read)
+  grid.py              # Grid state extraction, rendering, constants
+  levels.py            # Standard + Nightmare level definitions
+  impossible.py        # Impossible Labyrinth definition
+docs/                  # Web visualizer (GitHub Pages)
+  index.html           # Interactive grid replay
+  data.json            # Pre-generated results
+solvers/               # ⚠️  REFERENCE SOLUTIONS — don't read if attempting the challenge
+  DO_NOT_READ.md       # Explains what's in here
+  solver.py            # Full BFS solver (100% solve rate)
+  pathfinding.py       # BFS pathfinding algorithms
+  ...                  # Other solver versions and notes
 ```
 
-### Legacy files (original exploration)
+### Legacy files (from original exploration)
 ```
 babyai_harness.py      # Original text rendering harness
-solve_babyai.py        # Solver v1
-solve_v2.py            # Solver v2 (79% baseline)
-show_tasks.py          # Task viewer script
+show_tasks.py          # Quick task viewer
 nightmare_levels.py    # Original nightmare level definitions
 ```
 
-## Nightmare Levels
+## Writing Your Solver
 
-| Level | Design | Difficulty |
-|-------|--------|------------|
-| **Key Chain** | 4-room corridor, 3 locked doors, chained key dependencies | Must manage single-item inventory across 3 key pickups |
-| **Mega Maze** | 4×4 room grid (16 rooms), all doors closed | 100+ step navigation sequences |
-| **Backtrack** | 5-room corridor, key at far end, target at other end behind locked door | Full double traversal (~150 steps) |
-| **Compound** | 3-room corridor, put-next-to then pickup | Multi-phase inventory management |
+Create a module with a `solve(env_name, seed) -> list[str]` function:
 
-## Setup
+```python
+# my_solver.py
+import gymnasium as gym
+from engine.grid import get_grid_info, find_objects, ACTION_MAP
 
-```bash
-pip install minigrid gymnasium
+def solve(env_name, seed):
+    env = gym.make(env_name)
+    obs, _ = env.reset(seed=seed)
+    # ... your logic ...
+    env.close()
+    return ["right", "forward", "toggle", ...]
 ```
 
-## Running
-
-```bash
-# Run the solver test suite
-python -c "from engine.solver import solve_level; from engine.levels import ALL_LEVELS
-for l in ALL_LEVELS:
-    r = solve_level(l['id'], seed=42)
-    print(f'{l[\"name\"]:35s} {\"OK\" if r[\"success\"] else \"FAIL\"} ({r[\"num_steps\"]} steps)')"
-
-# Regenerate web data
-python generate_data.py
-
-# View the web interface locally
-cd docs && python -m http.server 8000
-```
-
-## Solver Architecture
-
-The solver uses BFS pathfinding with a hierarchical planning approach:
-
-1. **Mission parsing**: Regex-based parser handles goto, pickup, open, put-next-to, and compound missions
-2. **Subgoal solving**: Each mission type has a dedicated solver that plans and executes actions
-3. **Door navigation**: Iterative door-opening when targets are behind closed/locked doors
-4. **Key chain resolution**: Recursive key dependency resolution (key A unlocks door to key B which unlocks door to target)
-5. **Blocker handling**: Detects and moves objects blocking doors before unlocking
+Run: `python challenge.py suite my_solver`
 
 ## Credits
 
-- BabyAI platform: Maxime Chevalier-Boisvert, Dzmitry Bahdanau, Yoshua Bengio et al. ([paper](https://arxiv.org/abs/1810.08272))
-- This project: Built by Claude (Anthropic) in conversation with Sammy Martin, March 2026
+- BabyAI platform: Chevalier-Boisvert, Bahdanau, Bengio et al. ([paper](https://arxiv.org/abs/1810.08272))
+- Challenge design: Built by Claude (Anthropic) in conversation with Sammy Martin, March 2026

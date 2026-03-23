@@ -4,7 +4,7 @@ blocked doors, and compound missions."""
 import re
 import gymnasium as gym
 from engine.grid import get_grid_info, find_objects, grid_to_dict, ACTION_MAP, DIR_DELTAS
-from engine.pathfinding import (
+from solvers.pathfinding import (
     bfs_path, bfs_to_face, find_room_doors, relative_dir_to_door,
     reachable_cells, walkable,
 )

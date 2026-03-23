@@ -3,7 +3,7 @@ Runs the solver on all levels and exports replay data."""
 import json
 import sys
 import numpy as np
-from engine.solver import solve_level
+from solvers.solver import solve_level
 from engine.grid import grid_to_dict
 from engine.levels import ALL_LEVELS
 

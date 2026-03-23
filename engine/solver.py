@@ -1,14 +1,19 @@
-"""BabyAI solver: parses missions, plans and executes action sequences."""
+"""BabyAI solver: parses missions, plans and executes action sequences.
+Handles standard levels, multi-room navigation, chained key dependencies,
+blocked doors, and compound missions."""
 import re
 import gymnasium as gym
 from engine.grid import get_grid_info, find_objects, grid_to_dict, ACTION_MAP, DIR_DELTAS
-from engine.pathfinding import bfs_path, bfs_to_face, find_room_doors, relative_dir_to_door
+from engine.pathfinding import (
+    bfs_path, bfs_to_face, find_room_doors, relative_dir_to_door,
+    reachable_cells, walkable,
+)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _execute(env, actions):
-    """Execute actions on env, return {actions, done, reward, steps_data}."""
+    """Execute actions on env, return result dict with replay data."""
     total_r = 0
     executed = []
     steps_data = []
@@ -23,8 +28,21 @@ def _execute(env, actions):
     return {'actions': executed, 'done': False, 'reward': total_r, 'steps': steps_data}
 
 
+def _merge(*results):
+    """Merge multiple result dicts sequentially."""
+    merged = {'actions': [], 'done': False, 'reward': 0, 'steps': []}
+    for r in results:
+        if r is None:
+            continue
+        merged['actions'].extend(r['actions'])
+        merged['steps'].extend(r['steps'])
+        merged['reward'] += r['reward']
+        merged['done'] = r['done']
+    return merged
+
+
 def _drop_carried(env, info):
-    """Drop carried item. Returns action list or None."""
+    """Drop carried item in an empty adjacent cell."""
     if not info['carrying']:
         return []
     pos, d = info['pos'], info['dir']
@@ -67,9 +85,8 @@ def parse_mission(mission):
             parts = mission.split(sep, 1)
             return [_parse_single(parts[0].strip()), _parse_single(parts[1].strip())]
 
-    # "X and Y" (but not "pick up X and Y" which is ambiguous)
+    # "X and Y"
     if ' and ' in mission and not mission.startswith('pick up'):
-        # Check it's truly compound (both sides have verbs)
         parts = mission.split(' and ', 1)
         p1 = _parse_single(parts[0].strip())
         p2 = _parse_single(parts[1].strip())
@@ -82,21 +99,17 @@ def parse_mission(mission):
 def _parse_single(text):
     text = text.strip()
 
-    # "put the X Y next to the Z W"
     m = re.match(r'put (?:the |a )?(\w+) (\w+) next to (?:the |a )?(\w+) (\w+)', text)
     if m:
         return {'action': 'putnext', 'c1': m.group(1), 't1': m.group(2), 'c2': m.group(3), 't2': m.group(4)}
 
-    # "go to the X Y"
     m = re.match(r'go to (?:the |a )?(\w+) (\w+)', text)
     if m:
         return {'action': 'goto', 'color': m.group(1), 'type': m.group(2)}
-
     m = re.match(r'go to (?:the |a )?(\w+)', text)
     if m:
         return {'action': 'goto', 'color': None, 'type': m.group(1)}
 
-    # "pick up the X Y"
     m = re.match(r'pick up (?:the |a )?(\w+) (\w+)', text)
     if m:
         w1, w2 = m.group(1), m.group(2)
@@ -111,12 +124,10 @@ def _parse_single(text):
     if m:
         return {'action': 'pickup', 'color': None, 'type': m.group(1)}
 
-    # "open a door on your X"
     m = re.match(r'open (?:the |a )?door on your (\w+)', text)
     if m:
         return {'action': 'open_rel', 'rel_dir': m.group(1)}
 
-    # "open the X door"
     m = re.match(r'open (?:the |a )?(\w+) door', text)
     if m:
         color = m.group(1)
@@ -130,23 +141,20 @@ def _parse_single(text):
     return {'action': 'unknown', 'raw': text}
 
 
-# ── door navigation ──────────────────────────────────────────────────────────
+# ── general navigation engine ────────────────────────────────────────────────
 
-def _navigate_via_doors(env, info, final_fn, max_doors=20):
-    """Iteratively open doors until final_fn(info) returns actions."""
-    all_actions = []
-    all_steps = []
-    total_reward = 0
+def _navigate_via_doors(env, info, final_fn, max_iters=25):
+    """Iteratively open/unlock doors until final_fn(info) returns actions.
+    Handles: closed doors, locked doors (if carrying key), and blocked doors."""
+    all_results = []
 
-    for _ in range(max_doors):
+    for _ in range(max_iters):
         info = get_grid_info(env)
         final_acts = final_fn(info)
         if final_acts is not None:
             r = _execute(env, final_acts)
-            all_actions.extend(r['actions'])
-            all_steps.extend(r['steps'])
-            total_reward += r['reward']
-            return {'actions': all_actions, 'done': r['done'], 'reward': total_reward, 'steps': all_steps}
+            all_results.append(r)
+            return _merge(*all_results)
 
         doors = find_room_doors(info['grid'], info['pos'])
         usable = [d for d in doors if not d['is_open'] and not d['is_locked']]
@@ -158,42 +166,230 @@ def _navigate_via_doors(env, info, final_fn, max_doors=20):
         if not usable:
             return None
 
-        best_a = None
+        best_a, best_d = None, None
         for d in usable:
             a = bfs_to_face(info['grid'], info['pos'], info['dir'], d['pos'])
             if a is not None and (best_a is None or len(a) < len(best_a)):
                 best_a = a
+                best_d = d
 
         if best_a is None:
             return None
 
         r = _execute(env, best_a + ['toggle'])
-        all_actions.extend(r['actions'])
-        all_steps.extend(r['steps'])
-        total_reward += r['reward']
+        all_results.append(r)
         if r['done']:
-            return {'actions': all_actions, 'done': True, 'reward': total_reward, 'steps': all_steps}
+            return _merge(*all_results)
 
         r2 = _execute(env, ['forward'])
-        all_actions.extend(r2['actions'])
-        all_steps.extend(r2['steps'])
-        total_reward += r2['reward']
+        all_results.append(r2)
         if r2['done']:
-            return {'actions': all_actions, 'done': True, 'reward': total_reward, 'steps': all_steps}
+            return _merge(*all_results)
 
     return None
 
 
-def _merge(r1, r2):
-    """Merge two result dicts."""
-    if r2 is None:
-        return r1
-    return {
-        'actions': r1['actions'] + r2['actions'],
-        'done': r2['done'],
-        'reward': r1['reward'] + r2['reward'],
-        'steps': r1['steps'] + r2['steps'],
-    }
+def _ensure_reach_target(env, info, target_pos, interact_actions=None):
+    """Navigate to face target_pos, possibly through multiple doors/locked doors.
+    If we encounter locked doors, try to find the key first.
+    interact_actions: actions to perform once facing the target (e.g. ['toggle'], ['pickup'])"""
+    if interact_actions is None:
+        interact_actions = []
+
+    # Direct path?
+    acts = bfs_to_face(info['grid'], info['pos'], info['dir'], target_pos)
+    if acts is not None:
+        return _execute(env, acts + interact_actions)
+
+    # Navigate via doors
+    def check(i):
+        a = bfs_to_face(i['grid'], i['pos'], i['dir'], target_pos)
+        if a is not None:
+            return a + interact_actions
+        return None
+
+    return _navigate_via_doors(env, info, check)
+
+
+def _ensure_carrying_key(env, info, key_color, depth=0):
+    """Ensure we're carrying a key of given color.
+    Handles: key in current room, key behind closed doors, key behind locked doors."""
+    if depth > 5:
+        return None
+
+    carrying = info['carrying']
+    if carrying and carrying.type == 'key' and carrying.color == key_color:
+        return {'actions': [], 'done': False, 'reward': 0, 'steps': []}
+
+    # Drop what we're carrying if it's not the right key
+    all_results = []
+    if carrying:
+        drop = _drop_carried(env, info)
+        if drop:
+            r = _execute(env, drop)
+            all_results.append(r)
+            if r['done']:
+                return _merge(*all_results)
+            info = get_grid_info(env)
+
+    # Find the key
+    keys = find_objects(info['grid'], obj_type='key', color=key_color)
+    if not keys:
+        return None
+
+    for k in keys:
+        # Try direct pickup
+        acts = bfs_to_face(info['grid'], info['pos'], info['dir'], k['pos'])
+        if acts is not None:
+            r = _execute(env, acts + ['pickup'])
+            all_results.append(r)
+            return _merge(*all_results)
+
+    # Key behind doors - try navigating
+    def find_key(i, _kc=key_color):
+        ks = find_objects(i['grid'], obj_type='key', color=_kc)
+        for kk in ks:
+            a = bfs_to_face(i['grid'], i['pos'], i['dir'], kk['pos'])
+            if a is not None:
+                return a + ['pickup']
+        return None
+
+    # Check if blocked by locked door that we need another key for
+    doors = find_room_doors(info['grid'], info['pos'])
+    locked = [d for d in doors if d['is_locked']]
+
+    for ld in locked:
+        # Check if key we want is behind this locked door
+        # Try getting the key for this door first (recursive)
+        r_key = _ensure_carrying_key(env, get_grid_info(env), ld['color'], depth + 1)
+        if r_key is not None and not r_key['done']:
+            all_results.append(r_key)
+            # Now unlock this door
+            info2 = get_grid_info(env)
+            r_unlock = _ensure_reach_target(env, info2, ld['pos'], ['toggle', 'forward'])
+            if r_unlock is not None:
+                all_results.append(r_unlock)
+                if r_unlock['done']:
+                    return _merge(*all_results)
+                # Now try to find our target key
+                info3 = get_grid_info(env)
+                # Drop the door key first
+                if info3['carrying']:
+                    drop = _drop_carried(env, info3)
+                    if drop:
+                        r_drop = _execute(env, drop)
+                        all_results.append(r_drop)
+                        if r_drop['done']:
+                            return _merge(*all_results)
+
+                r_find = _navigate_via_doors(env, get_grid_info(env), find_key)
+                if r_find is not None:
+                    all_results.append(r_find)
+                    return _merge(*all_results)
+
+    # Try through unlocked doors
+    r = _navigate_via_doors(env, info, find_key)
+    if r is not None:
+        all_results.append(r)
+        return _merge(*all_results)
+
+    return None
+
+
+def _unlock_and_enter(env, info, door_info):
+    """Unlock a locked door and step through it. Handles blocked doors."""
+    key_color = door_info['color']
+    door_pos = door_info['pos']
+    all_results = []
+
+    # Get the key
+    r_key = _ensure_carrying_key(env, info, key_color)
+    if r_key is None:
+        return None
+    all_results.append(r_key)
+    if r_key['done']:
+        return _merge(*all_results)
+
+    # Navigate to door and unlock
+    info2 = get_grid_info(env)
+    r_unlock = _ensure_reach_target(env, info2, door_pos, ['toggle', 'forward'])
+    if r_unlock is not None:
+        all_results.append(r_unlock)
+        return _merge(*all_results)
+
+    # Door might be blocked by an object. Drop key, clear blocker, pick key back up.
+    info2 = get_grid_info(env)
+    drop = _drop_carried(env, info2)
+    if not drop:
+        return None
+    r_drop = _execute(env, drop)
+    all_results.append(r_drop)
+    if r_drop['done']:
+        return _merge(*all_results)
+
+    # Move blocker
+    info3 = get_grid_info(env)
+    r_blocker = _move_blocker(env, info3, door_pos)
+    if r_blocker is None:
+        return None
+    all_results.append(r_blocker)
+    if r_blocker['done']:
+        return _merge(*all_results)
+
+    # Pick key back up
+    info4 = get_grid_info(env)
+    r_rekey = _ensure_carrying_key(env, info4, key_color)
+    if r_rekey is None:
+        return None
+    all_results.append(r_rekey)
+    if r_rekey['done']:
+        return _merge(*all_results)
+
+    # Now try unlock again
+    info5 = get_grid_info(env)
+    r_unlock2 = _ensure_reach_target(env, info5, door_pos, ['toggle', 'forward'])
+    if r_unlock2 is None:
+        return None
+    all_results.append(r_unlock2)
+    return _merge(*all_results)
+
+
+def _move_blocker(env, info, door_pos):
+    """If there's an object blocking a door, move it out of the way."""
+    # Check cells adjacent to door for movable objects
+    grid = info['grid']
+    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+        bx, by = door_pos[0] + dx, door_pos[1] + dy
+        if 0 <= bx < info['w'] and 0 <= by < info['h']:
+            cell = grid.get(bx, by)
+            if cell and cell.type in ('ball', 'key', 'box'):
+                # This could be blocking - try to pick it up and move it
+                acts = bfs_to_face(info['grid'], info['pos'], info['dir'], (bx, by))
+                if acts is not None:
+                    all_results = []
+                    # Drop anything we're carrying first
+                    if info['carrying']:
+                        drop = _drop_carried(env, info)
+                        if drop:
+                            r = _execute(env, drop)
+                            all_results.append(r)
+                            info = get_grid_info(env)
+                            acts = bfs_to_face(info['grid'], info['pos'], info['dir'], (bx, by))
+                            if acts is None:
+                                continue
+
+                    r = _execute(env, acts + ['pickup'])
+                    all_results.append(r)
+                    if r['done']:
+                        return _merge(*all_results)
+                    # Drop it somewhere else
+                    info2 = get_grid_info(env)
+                    drop = _drop_carried(env, info2)
+                    if drop:
+                        r2 = _execute(env, drop)
+                        all_results.append(r2)
+                    return _merge(*all_results)
+    return None
 
 
 # ── subgoal solvers ──────────────────────────────────────────────────────────
@@ -229,11 +425,21 @@ def _solve_open(env, info, sg):
         doors = find_objects(info['grid'], obj_type='door')
     if not doors:
         return None
-
     target = doors[0]
 
     if target.get('is_locked'):
-        return _solve_unlock_door(env, info, target)
+        all_results = []
+        r = _ensure_carrying_key(env, info, target['color'])
+        if r is None:
+            return None
+        all_results.append(r)
+        if r['done']:
+            return _merge(*all_results)
+        info2 = get_grid_info(env)
+        r2 = _ensure_reach_target(env, info2, target['pos'], ['toggle'])
+        if r2:
+            all_results.append(r2)
+        return _merge(*all_results)
 
     acts = bfs_to_face(info['grid'], info['pos'], info['dir'], target['pos'])
     if acts is not None:
@@ -264,65 +470,22 @@ def _solve_open_rel(env, info, sg):
     return None
 
 
-def _solve_unlock_door(env, info, target):
-    """Unlock a locked door: find key, pick up, navigate to door, toggle."""
-    key_color = target['color']
-    door_pos = target['pos']
-
-    # Try direct key pickup
-    keys = find_objects(info['grid'], obj_type='key', color=key_color)
-    for k in keys:
-        ka = bfs_to_face(info['grid'], info['pos'], info['dir'], k['pos'])
-        if ka is not None:
-            r1 = _execute(env, ka + ['pickup'])
-            if r1['done']:
-                return r1
-            info2 = get_grid_info(env)
-            da = bfs_to_face(info2['grid'], info2['pos'], info2['dir'], door_pos)
-            if da is not None:
-                r2 = _execute(env, da + ['toggle'])
-                return _merge(r1, r2)
-            # Door behind other doors
-            def check_door(i):
-                a = bfs_to_face(i['grid'], i['pos'], i['dir'], door_pos)
-                return a + ['toggle'] if a is not None else None
-            r2 = _navigate_via_doors(env, get_grid_info(env), check_door)
-            if r2:
-                return _merge(r1, r2)
-
-    # Key behind doors
-    def find_key(i):
-        ks = find_objects(i['grid'], obj_type='key', color=key_color)
-        for kk in ks:
-            a = bfs_to_face(i['grid'], i['pos'], i['dir'], kk['pos'])
-            if a is not None:
-                return a + ['pickup']
-        return None
-
-    r1 = _navigate_via_doors(env, info, find_key)
-    if r1 and not r1['done']:
-        def check_door(i):
-            a = bfs_to_face(i['grid'], i['pos'], i['dir'], door_pos)
-            return a + ['toggle'] if a is not None else None
-        r2 = _navigate_via_doors(env, get_grid_info(env), check_door)
-        if r2:
-            return _merge(r1, r2)
-
-    return None
-
-
 def _solve_pickup(env, info, sg):
+    """Pick up an object, handling: locked doors, chained keys, blockers."""
     color, obj_type = sg.get('color'), sg.get('type')
+    all_results = []
 
-    # If carrying something, drop it first
+    # Drop anything we're carrying
     if info['carrying']:
         drop = _drop_carried(env, info)
         if drop:
-            r_drop = _execute(env, drop)
-            if r_drop['done']:
-                return r_drop
+            r = _execute(env, drop)
+            all_results.append(r)
+            if r['done']:
+                return _merge(*all_results)
             info = get_grid_info(env)
 
+    # Try direct pickup
     targets = find_objects(info['grid'], obj_type=obj_type, color=color)
     if not targets and color:
         targets = find_objects(info['grid'], obj_type=obj_type)
@@ -330,125 +493,126 @@ def _solve_pickup(env, info, sg):
     for t in targets:
         acts = bfs_to_face(info['grid'], info['pos'], info['dir'], t['pos'])
         if acts is not None:
-            return _execute(env, acts + ['pickup'])
+            r = _execute(env, acts + ['pickup'])
+            all_results.append(r)
+            return _merge(*all_results)
 
-    # Need to go through doors — possibly locked
-    doors = find_room_doors(info['grid'], info['pos'])
-    locked = [d for d in doors if d['is_locked']]
+    # Need to go through doors
+    # Check for locked doors and handle them with key chains
+    for attempt in range(10):
+        info = get_grid_info(env)
 
-    if locked and not info['carrying']:
-        for ld in locked:
-            keys = find_objects(info['grid'], obj_type='key', color=ld['color'])
+        # Drop anything we're carrying (from previous key usage)
+        if info['carrying']:
+            drop = _drop_carried(env, info)
+            if drop:
+                r = _execute(env, drop)
+                all_results.append(r)
+                if r['done']:
+                    return _merge(*all_results)
+                info = get_grid_info(env)
 
-            # Try direct key path
-            for k in keys:
-                ka = bfs_to_face(info['grid'], info['pos'], info['dir'], k['pos'])
-                if ka is not None:
-                    r1 = _execute(env, ka + ['pickup'])
-                    if r1['done']:
-                        return r1
-                    info2 = get_grid_info(env)
-                    da = bfs_to_face(info2['grid'], info2['pos'], info2['dir'], ld['pos'])
-                    if da is not None:
-                        r2 = _execute(env, da + ['toggle', 'forward'])
-                        r_so_far = _merge(r1, r2)
-                        if r_so_far['done']:
-                            return r_so_far
+        # Check if target is now reachable
+        targets = find_objects(info['grid'], obj_type=obj_type, color=color)
+        if not targets and color:
+            targets = find_objects(info['grid'], obj_type=obj_type)
+        for t in targets:
+            acts = bfs_to_face(info['grid'], info['pos'], info['dir'], t['pos'])
+            if acts is not None:
+                r = _execute(env, acts + ['pickup'])
+                all_results.append(r)
+                return _merge(*all_results)
 
-                        # Drop key before picking up target
-                        info3 = get_grid_info(env)
-                        drop_a = _drop_carried(env, info3)
-                        if drop_a:
-                            r_drop = _execute(env, drop_a)
-                            r_so_far = _merge(r_so_far, r_drop)
-                            if r_so_far['done']:
-                                return r_so_far
+        # Find doors we can open
+        doors = find_room_doors(info['grid'], info['pos'])
+        unlocked_closed = [d for d in doors if not d['is_open'] and not d['is_locked']]
+        locked = [d for d in doors if d['is_locked']]
 
-                        # Find target
-                        info4 = get_grid_info(env)
+        if unlocked_closed:
+            # Open nearest unlocked closed door
+            best_a, best_d = None, None
+            for d in unlocked_closed:
+                a = bfs_to_face(info['grid'], info['pos'], info['dir'], d['pos'])
+                if a is not None and (best_a is None or len(a) < len(best_a)):
+                    best_a = a
+                    best_d = d
 
-                        def check_target(i, _ot=obj_type, _c=color):
-                            ts = find_objects(i['grid'], obj_type=_ot, color=_c)
-                            if not ts and _c:
-                                ts = find_objects(i['grid'], obj_type=_ot)
-                            for t in ts:
-                                a = bfs_to_face(i['grid'], i['pos'], i['dir'], t['pos'])
-                                if a is not None:
-                                    return a + ['pickup']
-                            return None
+            if best_a is not None:
+                # Check if door is blocked
+                r = _execute(env, best_a + ['toggle'])
+                all_results.append(r)
+                if r['done']:
+                    return _merge(*all_results)
 
-                        r3 = _navigate_via_doors(env, info4, check_target)
-                        if r3:
-                            return _merge(r_so_far, r3)
+                # Check if toggle worked (door opened)
+                info_after = get_grid_info(env)
+                cell_at_door = info_after['grid'].get(best_d['pos'][0], best_d['pos'][1])
+                if cell_at_door and cell_at_door.type == 'door' and not cell_at_door.is_open:
+                    # Door didn't open - might be blocked
+                    r_blocker = _move_blocker(env, get_grid_info(env), best_d['pos'])
+                    if r_blocker:
+                        all_results.append(r_blocker)
+                        # Try again
+                        info = get_grid_info(env)
+                        acts = bfs_to_face(info['grid'], info['pos'], info['dir'], best_d['pos'])
+                        if acts:
+                            r = _execute(env, acts + ['toggle'])
+                            all_results.append(r)
+                            if r['done']:
+                                return _merge(*all_results)
 
-            # Key behind closed doors
-            if keys:
-                key_color = ld['color']
-                door_pos = ld['pos']
+                r2 = _execute(env, ['forward'])
+                all_results.append(r2)
+                if r2['done']:
+                    return _merge(*all_results)
+                continue
 
-                def find_key(i, _kc=key_color):
-                    ks = find_objects(i['grid'], obj_type='key', color=_kc)
-                    for kk in ks:
-                        a = bfs_to_face(i['grid'], i['pos'], i['dir'], kk['pos'])
-                        if a is not None:
-                            return a + ['pickup']
-                    return None
+        if locked:
+            # Try to unlock a locked door
+            for ld in locked:
+                r_unlock = _unlock_and_enter(env, get_grid_info(env), ld)
+                if r_unlock is not None:
+                    all_results.append(r_unlock)
+                    if r_unlock['done']:
+                        return _merge(*all_results)
+                    break
+            else:
+                return None  # Can't unlock any door
+            continue
 
-                r_nav = _navigate_via_doors(env, info, find_key)
-                if r_nav and not r_nav['done']:
-                    info_k = get_grid_info(env)
+        # No doors to open
+        # Try general navigation with what we have
+        def check_pickup(i, _ot=obj_type, _c=color):
+            ts = find_objects(i['grid'], obj_type=_ot, color=_c)
+            if not ts and _c:
+                ts = find_objects(i['grid'], obj_type=_ot)
+            for t in ts:
+                a = bfs_to_face(i['grid'], i['pos'], i['dir'], t['pos'])
+                if a is not None:
+                    return a + ['pickup']
+            return None
 
-                    def find_locked(i, _dp=door_pos):
-                        a = bfs_to_face(i['grid'], i['pos'], i['dir'], _dp)
-                        return a + ['toggle', 'forward'] if a is not None else None
+        r = _navigate_via_doors(env, info, check_pickup)
+        if r:
+            all_results.append(r)
+        return _merge(*all_results) if all_results else None
 
-                    r_door = _navigate_via_doors(env, info_k, find_locked)
-                    if r_door:
-                        r_so_far = _merge(r_nav, r_door)
-                        info_d = get_grid_info(env)
-                        drop_a = _drop_carried(env, info_d)
-                        if drop_a:
-                            r_drop = _execute(env, drop_a)
-                            r_so_far = _merge(r_so_far, r_drop)
-
-                        def check_t(i, _ot=obj_type, _c=color):
-                            ts = find_objects(i['grid'], obj_type=_ot, color=_c)
-                            if not ts and _c:
-                                ts = find_objects(i['grid'], obj_type=_ot)
-                            for t in ts:
-                                a = bfs_to_face(i['grid'], i['pos'], i['dir'], t['pos'])
-                                if a is not None:
-                                    return a + ['pickup']
-                            return None
-
-                        r_pick = _navigate_via_doors(env, get_grid_info(env), check_t)
-                        if r_pick:
-                            return _merge(r_so_far, r_pick)
-
-    def check_pickup(i, _ot=obj_type, _c=color):
-        ts = find_objects(i['grid'], obj_type=_ot, color=_c)
-        if not ts and _c:
-            ts = find_objects(i['grid'], obj_type=_ot)
-        for t in ts:
-            a = bfs_to_face(i['grid'], i['pos'], i['dir'], t['pos'])
-            if a is not None:
-                return a + ['pickup']
-        return None
-
-    return _navigate_via_doors(env, info, check_pickup)
+    return _merge(*all_results) if all_results else None
 
 
 def _solve_putnext(env, info, sg):
     c1, t1 = sg.get('c1'), sg.get('t1')
     c2, t2 = sg.get('c2'), sg.get('t2')
+    all_results = []
 
     # Drop anything we're carrying first
     if info['carrying']:
         drop = _drop_carried(env, info)
         if drop:
-            r_drop = _execute(env, drop)
-            if r_drop['done']:
-                return r_drop
+            r = _execute(env, drop)
+            all_results.append(r)
+            if r['done']:
+                return _merge(*all_results)
             info = get_grid_info(env)
 
     # Pick up obj1
@@ -475,12 +639,14 @@ def _solve_putnext(env, info, sg):
         r1 = _navigate_via_doors(env, info, find_obj)
         if r1 is None:
             return None
+        all_results.append(r1)
         if r1['done']:
-            return r1
+            return _merge(*all_results)
     else:
         r1 = _execute(env, best_pick + ['pickup'])
+        all_results.append(r1)
         if r1['done']:
-            return r1
+            return _merge(*all_results)
 
     # Drop near obj2
     info2 = get_grid_info(env)
@@ -491,17 +657,17 @@ def _solve_putnext(env, info, sg):
     drop_acts = check_drop(info2)
     if drop_acts:
         r2 = _execute(env, drop_acts)
-        return _merge(r1, r2)
+        all_results.append(r2)
+        return _merge(*all_results)
 
     r2 = _navigate_via_doors(env, info2, check_drop)
     if r2:
-        return _merge(r1, r2)
-    return None
+        all_results.append(r2)
+    return _merge(*all_results) if all_results else None
 
 
 def _find_drop_position(info, t2, c2):
     """Find actions to drop carried obj next to obj2."""
-    from engine.pathfinding import bfs_path
     objs2 = find_objects(info['grid'], obj_type=t2, color=c2)
     if not objs2 and c2:
         objs2 = find_objects(info['grid'], obj_type=t2)
@@ -534,9 +700,12 @@ def _find_drop_position(info, t2, c2):
 
 # ── main entry point ─────────────────────────────────────────────────────────
 
-def solve_level(env_name, seed=42, max_steps=500):
-    """Solve a BabyAI level. Returns a result dict with full replay data."""
-    env = gym.make(env_name, max_steps=max_steps)
+def solve_level(env_name, seed=42, max_steps=None):
+    """Solve a BabyAI level. Returns result dict with full replay data."""
+    kwargs = {}
+    if max_steps is not None:
+        kwargs['max_steps'] = max_steps
+    env = gym.make(env_name, **kwargs)
     obs, _ = env.reset(seed=seed)
     mission = obs['mission']
     initial_grid = grid_to_dict(env)

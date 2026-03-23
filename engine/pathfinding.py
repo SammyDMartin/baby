@@ -71,11 +71,23 @@ def reachable_cells(grid, start):
 
 
 def find_room_doors(grid, start):
-    """Find all doors bordering reachable area from start."""
+    """Find all doors bordering or near the reachable area from start.
+    Also looks through movable objects (ball, key, box) that might block doors."""
     reachable = reachable_cells(grid, start)
     doors = []
     seen = set()
+
+    # Cells to check: reachable cells + cells with movable objects adjacent to reachable
+    check_from = set(reachable)
     for x, y in reachable:
+        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+            nx, ny = x + dx, y + dy
+            if (nx, ny) not in check_from and 0 <= nx < grid.width and 0 <= ny < grid.height:
+                cell = grid.get(nx, ny)
+                if cell and cell.type in ('ball', 'key', 'box'):
+                    check_from.add((nx, ny))
+
+    for x, y in check_from:
         for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
             nx, ny = x + dx, y + dy
             if (nx, ny) in seen:

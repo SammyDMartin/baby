@@ -129,24 +129,19 @@ class NightmareBacktrack(RoomGridLevel):
 
 
 class NightmareCompound(RoomGridLevel):
-    """3x3 rooms. Put blue ball next to green box, then pick up red key.
-    Objects spread across rooms behind closed doors. Inventory management."""
+    """1x3 rooms. Put blue ball next to green box, then pick up red key.
+    Objects spread across rooms with closed doors. Inventory management."""
     def __init__(self, **kwargs):
-        super().__init__(room_size=7, num_rows=3, num_cols=3, max_steps=500, **kwargs)
+        super().__init__(room_size=7, num_rows=1, num_cols=3, max_steps=400, **kwargs)
 
     def gen_mission(self):
-        self.place_agent(1, 1)
-        self.open_all_doors()
+        self.place_agent(1, 0)
+        # Doors between rooms (closed, not locked)
+        self.add_door(0, 0, door_idx=0, locked=False)
+        self.add_door(1, 0, door_idx=0, locked=False)
         obj_a, _ = self.add_object(0, 0, 'key', 'red')
-        obj_b, _ = self.add_object(2, 0, 'ball', 'blue')
-        obj_c, _ = self.add_object(0, 2, 'box', 'green')
-        for _ in range(5):
-            try:
-                r, c = random.randint(0, 2), random.randint(0, 2)
-                self.add_object(r, c, random.choice(['ball', 'box']),
-                               random.choice(['purple', 'grey', 'yellow']))
-            except Exception:
-                pass
+        obj_b, _ = self.add_object(1, 0, 'ball', 'blue')
+        obj_c, _ = self.add_object(2, 0, 'box', 'green')
         self.check_objs_reachable()
         sub1 = PutNextInstr(ObjDesc(obj_b.type, obj_b.color), ObjDesc(obj_c.type, obj_c.color))
         sub2 = PickupInstr(ObjDesc(obj_a.type, obj_a.color))

@@ -85,13 +85,21 @@ def parse_mission(mission):
             parts = mission.split(sep, 1)
             return [_parse_single(parts[0].strip()), _parse_single(parts[1].strip())]
 
-    # "X and Y"
-    if ' and ' in mission and not mission.startswith('pick up'):
-        parts = mission.split(' and ', 1)
-        p1 = _parse_single(parts[0].strip())
-        p2 = _parse_single(parts[1].strip())
-        if p1['action'] != 'unknown' and p2['action'] != 'unknown':
-            return [p1, p2]
+    # "X and Y" - split on "and" only if both sides parse as valid actions
+    if ' and ' in mission:
+        # Try splitting at each occurrence of " and "
+        idx = 0
+        while True:
+            pos = mission.find(' and ', idx)
+            if pos == -1:
+                break
+            left = mission[:pos].strip()
+            right = mission[pos + 5:].strip()
+            p1 = _parse_single(left)
+            p2 = _parse_single(right)
+            if p1['action'] != 'unknown' and p2['action'] != 'unknown':
+                return [p1, p2]
+            idx = pos + 5
 
     return [_parse_single(mission)]
 
@@ -110,6 +118,22 @@ def _parse_single(text):
     if m:
         return {'action': 'goto', 'color': None, 'type': m.group(1)}
 
+    # "pick up the X on your left/right" or "pick up the X behind you"
+    m = re.match(r'pick up (?:the |a )?(\w+) on your (\w+)', text)
+    if m:
+        return {'action': 'pickup', 'color': None, 'type': m.group(1), 'rel_dir': m.group(2)}
+    m = re.match(r'pick up (?:the |a )?(\w+) behind you', text)
+    if m:
+        return {'action': 'pickup', 'color': None, 'type': m.group(1), 'rel_dir': 'behind'}
+
+    # "pick up the X Y on your left" (color + type + relative)
+    m = re.match(r'pick up (?:the |a )?(\w+) (\w+) on your (\w+)', text)
+    if m:
+        w1, w2, rel = m.group(1), m.group(2), m.group(3)
+        if w2 in OBJ_TYPES and w1 in COLORS:
+            return {'action': 'pickup', 'color': w1, 'type': w2, 'rel_dir': rel}
+
+    # "pick up the X Y"
     m = re.match(r'pick up (?:the |a )?(\w+) (\w+)', text)
     if m:
         w1, w2 = m.group(1), m.group(2)
@@ -470,9 +494,44 @@ def _solve_open_rel(env, info, sg):
     return None
 
 
+def _filter_by_rel_dir(targets, agent_pos, agent_dir, rel_dir):
+    """Filter objects by relative direction from agent.
+    Uses soft matching: picks objects with the strongest component in the given direction."""
+    if not rel_dir:
+        return targets
+
+    # Compute relative vector for each target and score by direction
+    fdx, fdy = DIR_DELTAS[agent_dir]
+    scored = []
+    for t in targets:
+        dx = t['pos'][0] - agent_pos[0]
+        dy = t['pos'][1] - agent_pos[1]
+        cross = fdx * dy - fdy * dx  # positive = right, negative = left
+        dot = fdx * dx + fdy * dy    # positive = front, negative = behind
+
+        if rel_dir == 'left':
+            scored.append((cross, t))  # most negative cross = most left
+        elif rel_dir == 'right':
+            scored.append((-cross, t))  # most positive cross = most right
+        elif rel_dir == 'front':
+            scored.append((-dot, t))
+        elif rel_dir == 'behind':
+            scored.append((dot, t))
+        else:
+            scored.append((0, t))
+
+    if not scored:
+        return targets
+
+    # Sort: lowest score = best match for the direction
+    scored.sort(key=lambda x: x[0])
+    return [s[1] for s in scored]
+
+
 def _solve_pickup(env, info, sg):
     """Pick up an object, handling: locked doors, chained keys, blockers."""
     color, obj_type = sg.get('color'), sg.get('type')
+    rel_dir = sg.get('rel_dir')
     all_results = []
 
     # Drop anything we're carrying
@@ -489,6 +548,7 @@ def _solve_pickup(env, info, sg):
     targets = find_objects(info['grid'], obj_type=obj_type, color=color)
     if not targets and color:
         targets = find_objects(info['grid'], obj_type=obj_type)
+    targets = _filter_by_rel_dir(targets, info['pos'], info['dir'], rel_dir)
 
     for t in targets:
         acts = bfs_to_face(info['grid'], info['pos'], info['dir'], t['pos'])

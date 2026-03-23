@@ -58,21 +58,23 @@ class ImpossibleLabyrinth(RoomGridLevel):
         # Target in far corner
         target, _ = self.add_object(5, 5, 'ball', 'red')
 
-        # Scatter red herring objects in EVERY room to make the grid visually noisy
-        # Use same-colored objects to create confusion
-        dist_types = ['ball', 'box', 'key']
-        dist_colors = ['blue', 'green', 'purple', 'yellow', 'grey']
+        # Fixed distractor pattern - deterministic to avoid generation randomness
+        dist_patterns = [
+            ('ball', 'blue'), ('box', 'green'), ('key', 'purple'),
+            ('ball', 'yellow'), ('box', 'grey'), ('key', 'blue'),
+            ('ball', 'green'), ('box', 'purple'), ('key', 'yellow'),
+        ]
+        idx = 0
         for i in range(6):
             for j in range(6):
                 if (i, j) == (5, 5):
                     continue
-                # Add 1-2 distractors per room
-                for _ in range(random.randint(1, 2)):
-                    try:
-                        self.add_object(i, j, random.choice(dist_types),
-                                       random.choice(dist_colors))
-                    except Exception:
-                        pass
+                try:
+                    t, c = dist_patterns[idx % len(dist_patterns)]
+                    self.add_object(i, j, t, c)
+                    idx += 1
+                except Exception:
+                    idx += 1
 
         self.check_objs_reachable()
         self.instrs = GoToInstr(ObjDesc(target.type, target.color))

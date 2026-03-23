@@ -35,8 +35,10 @@ def list_levels():
             tier = "Hard"
         elif d <= 13:
             tier = "Nightmare"
-        else:
+        elif d <= 15:
             tier = "Impossible"
+        else:
+            tier = "Ultra"
         print(f"  [{tier:10s} D{d:2d}]  {lvl['id']}")
         print(f"                    {lvl['name']}: {lvl['desc']}")
         print()

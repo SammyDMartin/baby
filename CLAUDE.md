@@ -2,16 +2,25 @@
 
 ## Your Task
 
-Build a solver that can beat every level of the BabyAI gridworld challenge, including 4 custom "Nightmare" levels and a final "Impossible Labyrinth."
+Beat every level of the BabyAI gridworld challenge, including 4 custom "Nightmare" levels, the "Impossible Labyrinth," and 2 new "Ultra" levels.
 
-There are **22 levels** total across 5 difficulty tiers. Your solver will be tested on 3 random seeds per level (66 instances total).
+There are **24 levels** total across 6 difficulty tiers. Your solver will be tested on 3 random seeds per level (72 instances total).
 
 ## Rules
 
 1. **Do NOT read any files in the `solvers/` directory.** That folder contains reference solutions. Reading them defeats the purpose of the challenge.
 2. You may read everything else: `engine/`, `challenge.py`, `docs/`, old files like `babyai_harness.py`, `show_tasks.py`, `nightmare_levels.py`.
-3. You should write your own solver from scratch. You can use any approach: BFS, heuristics, manual reasoning, or anything else.
+3. You should write your own solver from scratch.
 4. Use `challenge.py` to view levels, test action sequences, and run the full suite.
+
+## Approach
+
+You can solve levels two ways:
+
+- **By hand**: Read the grid, reason about positions and directions, and produce an action sequence step by step. Use `challenge.py show` to view the grid and `challenge.py verify` to test your sequence.
+- **Write code**: Create a solver module that reads the grid state and figures out what actions to take. The engine API gives you everything you need — the grid contents, your position and direction, what you're carrying, where objects are. Your code should look at the grid, understand the mission, and work out the steps.
+
+Either way, you'll need to understand how the grid works, what each action does, and how missions are structured. The harder levels require careful planning around locked doors, key management, and multi-step missions.
 
 ## Setup
 
@@ -106,6 +115,15 @@ python challenge.py suite my_solver
 | **Hard** (D7-9) | KeyCorridor, BlockedUnlock, Boss | Keys behind doors, blocked paths, compound missions ("X and Y"). |
 | **Nightmare** (D10-13) | KeyChain, MegaMaze, Backtrack, Compound | Chained key dependencies, 16-room mazes, 150+ step solutions, put-then-pickup missions. |
 | **Impossible** (D15) | Labyrinth | 36-room maze (6x6 rooms, 25x25 grid), 60 closed doors, 200-500 step solutions. |
+| **Ultra** (D20-25) | Gauntlet, Labyrinth+ | See below. |
+
+### Ultra Tier
+
+These levels are designed to be genuinely difficult even if you write code to solve them.
+
+**Ultra: The Gauntlet (D20)** — 4x4 room grid (16 rooms). Every door on the critical path is locked. Keys for each door are placed in the previous room, forming a winding chain through all 16 rooms. The mission is compound: "put the red ball next to the blue box, then pick up the green ball" — with the ball in room (0,0), the box in room (3,3), and the target in room (3,0). You must navigate the entire locked grid, manage your single-item inventory across dozens of key pickups and drops, then execute the compound mission across opposite corners. 300-600+ steps.
+
+**Ultra: Labyrinth+ (D25)** — 6x6 room grid (36 rooms). Mix of locked and closed doors. ~12 locked doors with keys scattered across the map, plus ~48 closed doors. Same compound mission structure spanning the full grid. 500-1000+ steps. The grid is 26x26 cells.
 
 ## Key Concepts
 

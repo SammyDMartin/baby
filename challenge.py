@@ -1,59 +1,69 @@
 """
-BabyAI Challenge Harness
+ChildAI Challenge Harness
 
-Use this to:
-  1. View any challenge level (renders the grid as text)
-  2. Submit and verify your action sequences
-  3. Run your solver against the full test suite
+Upgraded from BabyAI: adds Blind, Fog, and Trap modes alongside Classic.
 
 Usage:
-  python challenge.py show <level_id> [seed]        Show a level
-  python challenge.py verify <level_id> <seed> "action1 action2 ..."  Verify actions
-  python challenge.py list                           List all levels
-  python challenge.py suite <your_solver_module>     Run full test suite
+  python challenge.py list                           List all levels and tests
+  python challenge.py show <level_id> [seed]         Show a level grid
+  python challenge.py verify <level_id> <seed> "actions"  Verify action sequence
+  python challenge.py suite <solver_module> [section] Run test suite
+
+Sections: classic, blind, fog, trap, child (=blind+fog+trap), all (default)
 """
 import sys
+import importlib
 import gymnasium as gym
-from engine.grid import render_grid, get_grid_info, find_objects, ACTION_MAP, DIR_NAMES, DIR_ARROWS
+from engine.grid import render_grid, get_grid_info, find_objects, grid_to_dict
+from engine.grid import ACTION_MAP, DIR_NAMES, DIR_ARROWS
 from engine.levels import ALL_LEVELS
-from engine.impossible import IMPOSSIBLE_LEVELS
+from engine.child import CHILD_TESTS, BLIND_TESTS, FOG_TESTS, TRAP_TESTS
+from engine.wrappers import FogEnv, OneWayDoorWrapper
 
+
+# ── List / Show / Verify (unchanged from BabyAI) ───────────────────────
 
 def list_levels():
-    """List all challenge levels with difficulty ratings."""
-    print("=" * 72)
-    print("BabyAI CHALLENGE LEVELS")
-    print("=" * 72)
-    print()
+    print("=" * 76)
+    print("ChildAI CHALLENGE — LEVELS & TESTS")
+    print("=" * 76)
+
+    print("\n── Classic Levels (open mode, 3 seeds each) ──\n")
     for lvl in ALL_LEVELS:
         d = lvl['difficulty']
-        if d <= 3:
-            tier = "Easy"
-        elif d <= 6:
-            tier = "Medium"
-        elif d <= 9:
-            tier = "Hard"
-        elif d <= 13:
-            tier = "Nightmare"
-        elif d <= 15:
-            tier = "Impossible"
-        else:
-            tier = "Ultra"
+        if d <= 3: tier = "Easy"
+        elif d <= 6: tier = "Medium"
+        elif d <= 9: tier = "Hard"
+        elif d <= 13: tier = "Nightmare"
+        elif d <= 15: tier = "Impossible"
+        else: tier = "Ultra"
         print(f"  [{tier:10s} D{d:2d}]  {lvl['id']}")
         print(f"                    {lvl['name']}: {lvl['desc']}")
         print()
 
+    for section_name, tests in [("Blind", BLIND_TESTS), ("Fog", FOG_TESTS), ("Trap", TRAP_TESTS)]:
+        print(f"\n── {section_name} Tests (5 seeds each) ──\n")
+        for t in tests:
+            w = f" [wrapper: {t['wrapper']}]" if t.get('wrapper') else ""
+            print(f"  [D{t['difficulty']:2d}]  {t['name']}{w}")
+            print(f"          env: {t['id']}  mode: {t['mode']}")
+            print(f"          {t['desc']}")
+            print()
+
+    classic_n = len(ALL_LEVELS) * 3
+    child_n = sum(t['seeds'] for t in CHILD_TESTS)
+    print(f"Total: {len(ALL_LEVELS)} classic levels ({classic_n} instances)")
+    print(f"     + {len(CHILD_TESTS)} child tests ({child_n} instances)")
+    print(f"     = {classic_n + child_n} total instances")
+
 
 def show_level(env_name, seed=42):
-    """Render a level for manual inspection."""
     env = gym.make(env_name)
     obs, _ = env.reset(seed=seed)
     grid = env.unwrapped.grid
     agent_pos = tuple(env.unwrapped.agent_pos)
     agent_dir = env.unwrapped.agent_dir
     w, h = grid.width, grid.height
-
-    # Find target objects
     mission = obs['mission']
 
     print(f"{'=' * 72}")
@@ -69,7 +79,6 @@ def show_level(env_name, seed=42):
     print(f"{'=' * 72}")
     print()
 
-    # Render grid
     header = "    " + "".join(f"{x:>3}" for x in range(w))
     print(header)
     for y in range(h):
@@ -104,11 +113,10 @@ def show_level(env_name, seed=42):
     print()
     print("Legend:")
     print("  ## = wall   A>/Av/A</A^ = agent (facing direction)")
-    print("  XC = closed door (X=color)   XO = open door   XL = locked door")
-    print("  Xk = key   Xo = ball   Xx = box   (X = color: R G B P Y E=grey)")
+    print("  XC = closed door   XO = open door   XL = locked door")
+    print("  Xk = key   Xo = ball   Xx = box   (X = R G B P Y E=grey)")
     print()
 
-    # List key objects
     print("Objects:")
     for y in range(h):
         for x in range(w):
@@ -124,18 +132,11 @@ def show_level(env_name, seed=42):
 
     env.close()
     print()
-    print("Actions: left, right, forward, pickup, drop, toggle, done")
-    print("  left/right = turn in place")
-    print("  forward = move one cell in facing direction")
-    print("  toggle = open/close/unlock the door you're facing")
-    print("  pickup = pick up the object you're facing")
-    print("  drop = drop carried object in front of you")
+    print("Actions: left, right, forward, pickup, drop, toggle")
 
 
 def verify_actions(env_name, seed, actions_str):
-    """Verify an action sequence against a level."""
     actions = actions_str.strip().split()
-
     env = gym.make(env_name)
     obs, _ = env.reset(seed=seed)
     mission = obs['mission']
@@ -145,28 +146,19 @@ def verify_actions(env_name, seed, actions_str):
     print(f"Actions: {len(actions)}")
     print()
 
-    total_reward = 0
     for i, a in enumerate(actions):
         if a not in ACTION_MAP:
             print(f"  INVALID action '{a}' at step {i+1}")
             env.close()
             return False
-
         obs, reward, done, truncated, _ = env.step(ACTION_MAP[a])
-        total_reward += reward
-
         if done:
             success = reward > 0
-            if success:
-                print(f"  SUCCESS at step {i+1}/{len(actions)}")
-                print(f"  Reward: {total_reward:.3f}")
-            else:
-                print(f"  FAILED at step {i+1}/{len(actions)}")
+            print(f"  {'SUCCESS' if success else 'FAILED'} at step {i+1}/{len(actions)}")
             env.close()
             return success
-
         if truncated:
-            print(f"  TRUNCATED at step {i+1} (too many steps)")
+            print(f"  TRUNCATED at step {i+1}")
             env.close()
             return False
 
@@ -178,90 +170,229 @@ def verify_actions(env_name, seed, actions_str):
     return False
 
 
-def run_suite(solver_module_name):
-    """Run a solver module against all levels.
+# ── Replay verification ────────────────────────────────────────────────
 
-    The solver module must have a function with ONE of these signatures:
-
-        solve(env_name, seed) -> list of action strings
-            Solver creates its own env internally. Actions are verified
-            by the solver itself (we trust the result).
-
-        solve_with_env(env) -> (success: bool, actions: list[str])
-            Solver receives a pre-reset env. Steps it directly and
-            returns whether it succeeded plus the actions taken.
-
-    The suite creates each env, passes it to the solver, and checks success.
-    """
-    import importlib
-    mod = importlib.import_module(solver_module_name)
-
-    has_solve_env = hasattr(mod, 'solve_with_env')
-    solve_fn = getattr(mod, 'solve', None)
-
-    seeds_per_level = 3
-    total_wins, total_tests = 0, 0
-
-    print(f"{'=' * 72}")
-    print(f"RUNNING FULL TEST SUITE ({len(ALL_LEVELS)} levels x {seeds_per_level} seeds)")
-    print(f"{'=' * 72}")
-    print()
-
-    results = []
-    for lvl in ALL_LEVELS:
-        wins = 0
-        for seed in range(42, 42 + seeds_per_level):
-            try:
-                if has_solve_env:
-                    env = gym.make(lvl['id'])
-                    env.reset(seed=seed)
-                    success, actions = mod.solve_with_env(env)
-                    env.close()
-                    ok = success
-                elif solve_fn:
-                    # Solver manages its own env — verify by replay
-                    actions = solve_fn(lvl['id'], seed)
-                    ok = verify_actions_quiet(lvl['id'], seed, actions)
-                else:
-                    raise ValueError("Solver needs solve() or solve_with_env()")
-
-                if ok:
-                    wins += 1
-            except Exception as e:
-                print(f"  ERROR on {lvl['name']} seed={seed}: {e}")
-            total_tests += 1
-
-        total_wins += wins
-        rate = wins / seeds_per_level
-        bar = "#" * int(rate * 20) + "." * (20 - int(rate * 20))
-        results.append((lvl['name'], wins, seeds_per_level, rate))
-        print(f"  {lvl['name']:35s} [{bar}] {wins}/{seeds_per_level}")
-
-    print()
-    print(f"{'=' * 72}")
-    print(f"OVERALL: {total_wins}/{total_tests} ({total_wins * 100 // max(total_tests, 1)}%)")
-    print(f"{'=' * 72}")
-    return total_wins, total_tests
-
-
-def verify_actions_quiet(env_name, seed, actions):
-    """Verify without printing."""
-    env = gym.make(env_name)
-    obs, _ = env.reset(seed=seed)
+def replay_verify(env, actions):
+    """Replay action list on a pre-reset env. Returns True if mission completed."""
     for a in actions:
-        if a not in ACTION_MAP:
-            env.close()
-            return False
-        obs, reward, done, truncated, _ = env.step(ACTION_MAP[a])
+        if isinstance(a, str):
+            a_int = ACTION_MAP.get(a)
+            if a_int is None:
+                return False
+        else:
+            a_int = int(a)
+        obs, reward, done, truncated, _ = env.step(a_int)
         if done:
-            env.close()
             return reward > 0
         if truncated:
-            env.close()
             return False
-    env.close()
     return False
 
+
+def verify_quiet(env_name, seed, actions):
+    """Verify actions by replay on a fresh env."""
+    env = gym.make(env_name)
+    env.reset(seed=seed)
+    ok = replay_verify(env, actions)
+    env.close()
+    return ok
+
+
+# ── Test runners for each mode ─────────────────────────────────────────
+
+def run_classic_test(solver_mod, env_id, seed):
+    """Classic/open mode: solver gets full env access."""
+    has_solve_env = hasattr(solver_mod, 'solve_with_env')
+    has_solve = hasattr(solver_mod, 'solve')
+
+    if has_solve_env:
+        env = gym.make(env_id)
+        env.reset(seed=seed)
+        success, actions = solver_mod.solve_with_env(env)
+        env.close()
+        return success
+    elif has_solve:
+        actions = solver_mod.solve(env_id, seed)
+        return verify_quiet(env_id, seed, actions)
+    return None
+
+
+def run_blind_test(solver_mod, env_id, seed):
+    """Blind mode: solver gets grid snapshot + mission, no env.step()."""
+    if not hasattr(solver_mod, 'solve_blind'):
+        return None
+
+    env = gym.make(env_id)
+    obs, _ = env.reset(seed=seed)
+    grid_info = grid_to_dict(env)
+    mission = obs['mission']
+    env.close()
+
+    actions = solver_mod.solve_blind(grid_info, mission)
+    return verify_quiet(env_id, seed, actions)
+
+
+def run_fog_test(solver_mod, env_id, seed, wrapper=None):
+    """Fog mode: solver gets FogEnv (partial obs only)."""
+    if not hasattr(solver_mod, 'solve_fog'):
+        return None
+
+    env = gym.make(env_id)
+    if wrapper == 'oneway':
+        env = OneWayDoorWrapper(env)
+    fog = FogEnv(env)
+    fog.reset(seed=seed)
+
+    success, actions = solver_mod.solve_fog(fog)
+    recorded = fog.actions_taken
+    fog.close()
+
+    # Verify by replay on fresh env (with same wrapper)
+    env2 = gym.make(env_id)
+    if wrapper == 'oneway':
+        env2 = OneWayDoorWrapper(env2)
+    env2.reset(seed=seed)
+    ok = replay_verify(env2, recorded)
+    env2.close()
+    return ok
+
+
+def run_open_test_with_wrapper(solver_mod, env_id, seed, wrapper):
+    """Open mode with a wrapper (e.g. one-way doors)."""
+    if not hasattr(solver_mod, 'solve_with_env'):
+        return None  # solve() can't handle wrappers
+
+    env = gym.make(env_id)
+    if wrapper == 'oneway':
+        env = OneWayDoorWrapper(env)
+    env.reset(seed=seed)
+
+    success, actions = solver_mod.solve_with_env(env)
+    env.close()
+
+    # Verify by replay with wrapper
+    env2 = gym.make(env_id)
+    if wrapper == 'oneway':
+        env2 = OneWayDoorWrapper(env2)
+    env2.reset(seed=seed)
+    ok = replay_verify(env2, actions)
+    env2.close()
+    return ok
+
+
+def run_test(solver_mod, test_def, seed):
+    """Run a single test instance. Returns True/False/None (None=skipped)."""
+    env_id = test_def['id']
+    mode = test_def.get('mode', 'open')
+    wrapper = test_def.get('wrapper')
+
+    try:
+        if mode == 'blind':
+            return run_blind_test(solver_mod, env_id, seed)
+        elif mode == 'fog':
+            return run_fog_test(solver_mod, env_id, seed, wrapper)
+        elif mode == 'open':
+            if wrapper:
+                return run_open_test_with_wrapper(solver_mod, env_id, seed, wrapper)
+            return run_classic_test(solver_mod, env_id, seed)
+    except Exception as e:
+        print(f"    ERROR: {e}")
+        return False
+    return None
+
+
+# ── Suite runner ────────────────────────────────────────────────────────
+
+def run_suite(solver_module_name, section='all'):
+    mod = importlib.import_module(solver_module_name)
+
+    sections = {
+        'classic': ('Classic (Open)', ALL_LEVELS, 3, 'open'),
+        'blind':   ('Blind (Planning)', BLIND_TESTS, None, None),
+        'fog':     ('Fog (Exploration)', FOG_TESTS, None, None),
+        'trap':    ('Trap (New Mechanics)', TRAP_TESTS, None, None),
+    }
+
+    if section == 'all':
+        run_sections = ['classic', 'blind', 'fog', 'trap']
+    elif section == 'child':
+        run_sections = ['blind', 'fog', 'trap']
+    elif section in sections:
+        run_sections = [section]
+    else:
+        print(f"Unknown section: {section}")
+        print("Options: classic, blind, fog, trap, child, all")
+        return 0, 0
+
+    grand_wins, grand_tests, grand_skipped = 0, 0, 0
+
+    for sec_name in run_sections:
+        label, tests, fixed_seeds, fixed_mode = sections[sec_name]
+
+        print(f"\n{'=' * 72}")
+        print(f"  {label}")
+        print(f"{'=' * 72}\n")
+
+        sec_wins, sec_tests, sec_skipped = 0, 0, 0
+
+        for test_def in tests:
+            # Classic levels use a different format
+            if fixed_seeds is not None:
+                # Classic level dict -> test_def format
+                td = {
+                    'id': test_def['id'],
+                    'name': test_def['name'],
+                    'mode': fixed_mode,
+                    'seeds': fixed_seeds,
+                }
+                seeds = range(42, 42 + fixed_seeds)
+            else:
+                td = test_def
+                seeds = range(42, 42 + test_def['seeds'])
+
+            wins = 0
+            skips = 0
+            for seed in seeds:
+                result = run_test(mod, td, seed)
+                sec_tests += 1
+                if result is None:
+                    skips += 1
+                    sec_skipped += 1
+                elif result:
+                    wins += 1
+                    sec_wins += 1
+
+            total_for_level = len(list(seeds))
+            if skips == total_for_level:
+                bar = "." * 20
+                status = "SKIP"
+            else:
+                rate = wins / max(total_for_level - skips, 1)
+                bar = "#" * int(rate * 20) + "." * (20 - int(rate * 20))
+                status = f"{wins}/{total_for_level}"
+
+            name = td.get('name', td['id'])
+            wrapper_tag = f" [{td.get('wrapper', '')}]" if td.get('wrapper') else ""
+            print(f"  {name:35s}{wrapper_tag:10s} [{bar}] {status}")
+
+        grand_wins += sec_wins
+        grand_tests += sec_tests
+        grand_skipped += sec_skipped
+
+        tested = sec_tests - sec_skipped
+        print(f"\n  Section: {sec_wins}/{tested}" +
+              (f" ({sec_skipped} skipped)" if sec_skipped else ""))
+
+    print(f"\n{'=' * 72}")
+    tested = grand_tests - grand_skipped
+    pct = grand_wins * 100 // max(tested, 1)
+    print(f"OVERALL: {grand_wins}/{tested} ({pct}%)" +
+          (f"  [{grand_skipped} skipped]" if grand_skipped else ""))
+    print(f"{'=' * 72}")
+    return grand_wins, grand_tests
+
+
+# ── CLI ─────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
@@ -283,7 +414,8 @@ if __name__ == '__main__':
         verify_actions(env_name, seed, actions_str)
     elif cmd == 'suite':
         solver_mod = sys.argv[2]
-        run_suite(solver_mod)
+        section = sys.argv[3] if len(sys.argv) > 3 else 'all'
+        run_suite(solver_mod, section)
     else:
         print(f"Unknown command: {cmd}")
         print(__doc__)

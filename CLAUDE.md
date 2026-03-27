@@ -2,39 +2,35 @@
 
 ## Your Task
 
-Beat every level of the ChildAI gridworld challenge. This extends BabyAI with three new challenge modes — **Blind** (pure planning), **Fog** (partial observability), and **Trap** (new mechanics) — on top of the original 24 Classic levels.
+Beat every level of the ChildAI gridworld challenge. **38 tests, 142 instances** across 4 sections: Classic, Blind, Fog, and Trap.
 
-**38 tests** total across 4 sections. Your solver will be tested on 3-5 seeds per test (**142 instances** total).
-
-## Honesty Commitment
-
-Before you begin, commit to completing this challenge honestly:
-
-**I will not:**
-- Read, open, cat, grep, or in any way access files in the `solvers/` directory
-- Read `docs/data.json` to extract action sequences from previous solver runs
-- Use `git log`, `git show`, or `git diff` to recover deleted solver code or solution data
-- Search the web for BabyAI solver implementations or walkthroughs
-- Copy or adapt solver code from any source I haven't written myself
-- Use any technique to extract or reverse-engineer the reference solutions
-
-**I will:**
-- Write my own solution from scratch, using only my own reasoning
-- Either work through levels by hand or write my own code to do so
-- Only reference files I'm explicitly allowed to read (listed below)
-- Be transparent about my approach and any difficulties I encounter
-
-This challenge is a test of YOUR problem-solving ability. Looking at the answers defeats the entire purpose. If you find yourself stuck, that's the challenge working as intended.
+This is a test of YOUR problem-solving ability. You interact with the challenge **only through the programmatic interface** — you do not get to read how the levels are built, how the engine works, or how verification is done. Just like the original BabyAI benchmark, you are an agent that receives observations and produces actions.
 
 ## Rules
 
-1. **Do NOT read any files in the `solvers/` directory.** That folder contains reference solutions. Do not read, grep, cat, or access them in any way.
-2. **Do NOT search the web** for BabyAI solver code, gridworld solvers, or solutions.
-3. **Do NOT use git history** (`git log -p`, `git show`, `git diff`) to recover deleted files or old solver code.
-4. **Do NOT read `docs/data.json`** — it may contain action sequences from previous runs.
-5. You **may** read: `engine/`, `challenge.py`, `babyai_harness.py`, `show_tasks.py`, `nightmare_levels.py`, and `docs/index.html`.
-6. Write your own solver from scratch.
-7. Use `challenge.py` to view levels, test action sequences, and run the full suite.
+### What you MUST NOT do
+
+1. **Do NOT read ANY `.py` source files** in this repository — not `engine/`, not `solvers/`, not `challenge.py`, not `nightmare_levels.py`, not `babyai_harness.py`. None of them.
+2. **Do NOT read `docs/data.json`** — it contains traces from previous runs.
+3. **Do NOT use git history** (`git log -p`, `git show`, `git diff`) to recover deleted code or data.
+4. **Do NOT search the web** for BabyAI solver code, gridworld solvers, or walkthroughs.
+5. **Do NOT reverse-engineer** the challenge infrastructure by importing internal modules, inspecting private attributes, or reading bytecode/`.pyc` files.
+
+### What you MAY do
+
+1. **Read this file** (`CLAUDE.md`) — it's your complete briefing.
+2. **Read `README.md`** — project overview.
+3. **Read `babyai_api.py`** — public constants and helper functions for your solver.
+4. **Run `challenge.py`** commands (but do NOT read its source):
+   - `python challenge.py list` — list all levels and tests
+   - `python challenge.py show <level_id> <seed>` — view a level's grid
+   - `python challenge.py verify <level_id> <seed> "actions"` — test an action sequence
+   - `python challenge.py suite <your_solver> [section]` — run the test suite
+5. **Import from `babyai_api`** in your solver for constants and helpers.
+6. **Import `gymnasium`** to create and interact with environments.
+7. **Write and run your own solver code.**
+
+That's it. Everything you need to know is in this briefing and `babyai_api.py`. You figure out the rest by interacting with the environments.
 
 ## Setup
 
@@ -42,202 +38,250 @@ This challenge is a test of YOUR problem-solving ability. Looking at the answers
 pip install minigrid gymnasium
 ```
 
-## Challenge Modes
-
-### Classic (Open) — 24 levels, 3 seeds each = 72 instances
-
-Full grid access. You can use `env.step()`. This is the original BabyAI challenge.
-
-**Solver interface:** `solve(env_name, seed) -> list[str]` or `solve_with_env(env) -> (bool, list[str])`
-
-### Blind (Planning) — 5 tests, 5 seeds each = 25 instances
-
-You receive a **single snapshot** of the full grid (as a dict) and the mission text. You must return a complete action sequence. **No `env.step()`.** No interactive exploration.
-
-You must simulate the entire grid in your head (or code): door opens, inventory changes, position tracking. One wrong step in a 200-action sequence and you fail.
-
-**Solver interface:** `solve_blind(grid_info, mission) -> list[str]`
-
-`grid_info` is a dict with:
-- `width`, `height`: grid dimensions
-- `cells`: list of `{'x', 'y', 'type', 'color', 'is_open', 'is_locked'}`
-- `agent`: `{'x', 'y', 'dir', 'dir_name'}`
-- `carrying`: `{'type', 'color'}` or `None`
-
-### Fog (Exploration) — 5 tests, 5 seeds each = 25 instances
-
-**Partial observability.** You get a `FogEnv` that provides only a 7x7 agent-relative view on each step. You cannot see the full grid. You cannot access `env.unwrapped`.
-
-You must explore, build a mental map, find objects, and complete the mission — all from a tiny window. This is how BabyAI was originally designed to be used.
-
-**Solver interface:** `solve_fog(fog_env) -> (bool, list[str])`
-
-`fog_env` provides:
-- `step(action)` -> `obs, reward, done, truncated, info`
-- `obs['image']`: 7x7x3 numpy array (agent-relative partial view)
-- `obs['direction']`: agent's absolute direction (0=right, 1=down, 2=left, 3=up)
-- `obs['mission']`: mission text
-
-The view is agent-relative: agent is at position (3, 6) in the 7x7 grid, facing toward row 0. Each cell is encoded as `(object_type_idx, color_idx, state)`.
-
-**Observation encoding:**
-| Object | Idx | Color | Idx | Door State | Idx |
-|--------|-----|-------|-----|------------|-----|
-| unseen | 0 | red | 0 | open | 0 |
-| empty | 1 | green | 1 | closed | 1 |
-| wall | 2 | blue | 2 | locked | 2 |
-| floor | 3 | purple | 3 | | |
-| door | 4 | yellow | 4 | | |
-| key | 5 | grey | 5 | | |
-| ball | 6 | | | | |
-| box | 7 | | | | |
-
-Use `engine.wrappers.decode_obs(obs['image'])` to get a readable list of visible objects, and `view_to_world(rel_x, rel_y, agent_x, agent_y, agent_dir)` to convert view coordinates to world coordinates (if you're tracking your own position).
-
-### Trap (New Mechanics) — 4 tests, 5 seeds each = 20 instances
-
-New level types designed to break specific solver strategies:
-
-- **Red Herring:** 4 keys visible, only 1 matches the locked door. Naive "grab nearest key" fails.
-- **Shuttle:** Ferry a ball across 2 locked doors. Requires 10+ inventory swaps and careful planning.
-- **One-Way Corridor:** Doors lock behind you (via wrapper). Must pick up the next key BEFORE proceeding. No backtracking.
-- **Tight Labyrinth:** 36-room maze with a strict step limit (300). Near-optimal pathfinding required.
-
-**Solver interface:** `solve_with_env(env)` for most; One-Way requires it (can't use `solve()` since the wrapper changes behavior).
-
 ## How It Works
 
 Each level is a 2D gridworld. Your agent receives a natural language mission (e.g., "go to the red ball", "pick up the blue key") and must produce a sequence of actions to complete it.
 
-**Actions:** `left`, `right`, `forward`, `pickup`, `drop`, `toggle`
-- `left` / `right` — turn in place (rotate 90 degrees)
-- `forward` — move one cell in the direction you're facing
-- `toggle` — open/close/unlock the door in front of you
-- `pickup` — pick up the object in front of you (can only carry one thing)
-- `drop` — drop carried object in front of you
+### Actions
 
-**Grid conventions:**
-- Directions: 0=right(+x), 1=down(+y), 2=left(-x), 3=up(-y)
-- Turn left = (dir-1)%4, turn right = (dir+1)%4
-- Walls block movement. Closed doors block movement (toggle to open).
-- Locked doors require the matching colored key (carry key, face door, toggle).
+| Action | Code | Effect |
+|--------|------|--------|
+| `left` | 0 | Turn 90° counterclockwise |
+| `right` | 1 | Turn 90° clockwise |
+| `forward` | 2 | Move one cell in facing direction |
+| `pickup` | 3 | Pick up object in front (can carry only one item) |
+| `drop` | 4 | Drop carried object in front |
+| `toggle` | 5 | Open/close/unlock door in front |
+
+### Directions
+
+| Dir | Name | Delta (dx, dy) |
+|-----|------|----------------|
+| 0 | right | (+1, 0) |
+| 1 | down | (0, +1) |
+| 2 | left | (-1, 0) |
+| 3 | up | (0, -1) |
+
+Turn left = `(dir - 1) % 4`. Turn right = `(dir + 1) % 4`.
+
+### Grid Conventions
+
+- The grid is a 2D array. (0,0) is top-left. X increases right, Y increases down.
+- **Walls** block movement.
+- **Closed doors** block movement. Face the door and `toggle` to open.
+- **Locked doors** require the matching colored key. Carry the key, face the door, `toggle`.
+- **Inventory** — you can carry exactly one object. `pickup` to grab, `drop` to release.
+- Stepping onto an open door cell is allowed. You stand on it, then `forward` again to exit.
+
+### Mission Types
+
+- **"go to the X"** — complete when you are adjacent to and facing the target.
+- **"pick up the X"** — pick up the specified object.
+- **"open the X door"** — toggle the specified door open.
+- **"put the X next to the Y"** — pick up X, navigate near Y, drop X adjacent to Y.
+- **Compound missions** — "do A then do B", "do A and do B" — complete sub-tasks in order.
+
+## Challenge Sections
+
+### 1. Classic (Open) — 24 levels × 3 seeds = 72 instances
+
+Full environment access. You can call `env.step()`, read `env.unwrapped.grid`, check `env.unwrapped.agent_pos`, etc. Standard MiniGrid API.
+
+**Solver interface:**
+```python
+def solve(env_name, seed):
+    """Return action list. You create and manage the env yourself."""
+    env = gymnasium.make(env_name)
+    env.reset(seed=seed)
+    # ... your logic — full access to env ...
+    env.close()
+    return ["right", "forward", "toggle", ...]
+
+# OR
+
+def solve_with_env(env):
+    """env is pre-created and reset. Step it directly."""
+    # ... your logic — full access to env ...
+    return (success_bool, ["right", "forward", ...])
+```
+
+**MiniGrid env cheat sheet** (for classic mode):
+- `env.unwrapped.grid.get(x, y)` → cell object or `None`
+- Cell attributes: `.type` ("wall"/"door"/"key"/"ball"/"box"), `.color`, `.is_open`, `.is_locked`
+- `env.unwrapped.agent_pos` → `(x, y)` numpy array
+- `env.unwrapped.agent_dir` → int (0-3)
+- `env.unwrapped.carrying` → object or `None`
+- `env.step(action_int)` → `(obs, reward, done, truncated, info)`
+- `reward > 0` when done means success.
+
+### 2. Blind (Planning) — 5 tests × 5 seeds = 25 instances
+
+You receive a **single snapshot** of the full grid as a Python dict, plus the mission text. You must return a complete action sequence. **No `env.step()`.** No environment access at all.
+
+You must simulate everything in your own code: movement, turning, door opens, inventory changes, position tracking. One wrong step and you fail.
+
+**Solver interface:**
+```python
+def solve_blind(grid_info, mission):
+    """Plan from a static grid snapshot. No env access."""
+    return ["right", "forward", "toggle", ...]
+```
+
+**`grid_info` dict format:**
+```python
+{
+    'width': 22,       # grid width
+    'height': 22,      # grid height
+    'cells': [         # list of ALL non-wall cells
+        {'x': 1, 'y': 1, 'type': 'empty', 'color': None,
+         'is_open': False, 'is_locked': False},
+        {'x': 3, 'y': 1, 'type': 'door', 'color': 'red',
+         'is_open': False, 'is_locked': True},
+        {'x': 5, 'y': 2, 'type': 'key', 'color': 'red',
+         'is_open': False, 'is_locked': False},
+        # ... every non-wall cell in the grid
+    ],
+    'agent': {'x': 1, 'y': 3, 'dir': 0, 'dir_name': 'right'},
+    'carrying': None,  # or {'type': 'key', 'color': 'blue'}
+}
+```
+
+Wall cells are NOT listed. Any `(x, y)` not in `cells` and not out-of-bounds is a wall.
+
+**Blind tests:**
+| Test | Env | What's Hard |
+|------|-----|-------------|
+| Maze Navigation (D30) | GoToObjMaze | Plan path through closed-door maze |
+| Unlock + Pickup (D32) | UnlockPickup | Simulate key/door/pickup in code |
+| Key Chain (D35) | NightmareKeyChain | 3-key dependency chain, 80+ steps |
+| Compound Mission (D37) | NightmareCompound | Multi-step mission planning |
+| Labyrinth (D39) | ImpossibleLabyrinth | 36 rooms, 200+ perfect steps |
+
+### 3. Fog (Exploration) — 5 tests × 5 seeds = 25 instances
+
+**Partial observability.** You get a `FogEnv` that provides only a 7×7 agent-relative view on each step. You cannot see the full grid. You cannot access `env.unwrapped` or any internal state.
+
+You must explore, build a map, find objects, and complete the mission — all from a tiny window.
+
+**Solver interface:**
+```python
+def solve_fog(fog_env):
+    """Explore and solve with partial observations only."""
+    # fog_env is already reset. Do NOT call reset().
+    obs, reward, done, truncated, info = fog_env.step('forward')
+    # ... explore, map, plan ...
+    return (success_bool, ["forward", "left", ...])
+```
+
+**What `fog_env` provides:**
+- `fog_env.step(action)` → `(obs, reward, done, truncated, info)`
+  - `action`: int (0-5) or string name ("left", "forward", etc.)
+- `fog_env.mission` → mission text (string)
+
+**What `obs` contains:**
+- `obs['image']`: `(7, 7, 3)` numpy array — agent-relative partial view
+- `obs['direction']`: int — agent's absolute direction (0-3)
+- `obs['mission']`: str — mission text
+
+**Observation image encoding:**
+
+Each cell in the 7×7 view is `(object_type_idx, color_idx, state)`:
+
+| Object | Idx | | Color | Idx | | Door State | Idx |
+|--------|-----|-|-------|-----|-|------------|-----|
+| unseen | 0 | | red | 0 | | open | 0 |
+| empty | 1 | | green | 1 | | closed | 1 |
+| wall | 2 | | blue | 2 | | locked | 2 |
+| floor | 3 | | purple | 3 | | | |
+| door | 4 | | yellow | 4 | | | |
+| key | 5 | | grey | 5 | | | |
+| ball | 6 | | | | | | |
+| box | 7 | | | | | | |
+
+**View layout:** The 7×7 view is agent-relative. The agent is always at position `(3, 6)` in the view, facing toward row 0. So `view[0][3]` is 6 cells directly ahead, and `view[6][3]` is the agent's own cell.
+
+**Helper functions** (import from `babyai_api`):
+```python
+from babyai_api import decode_obs, view_to_world
+
+objects = decode_obs(obs['image'])
+# Returns: [{'type': 'door', 'color': 'red', 'rel_x': -1, 'rel_y': 3,
+#             'view_x': 2, 'view_y': 3, 'door_state': 'closed'}, ...]
+
+world_x, world_y = view_to_world(rel_x, rel_y, agent_x, agent_y, agent_dir)
+# Convert agent-relative coords to world coords (if you're tracking position)
+```
+
+**Fog tests:**
+| Test | Env | What's Hard |
+|------|-----|-------------|
+| GoTo Object (D40) | GoToObj | Find and approach a named object |
+| Maze Navigation (D43) | GoToObjMaze | Explore closed-door maze room by room |
+| Unlock Door (D45) | Unlock | Find key somewhere, then find the door |
+| Mega Maze (D48) | NightmareMaze | 16 rooms, systematic exploration |
+| Labyrinth (D50) | ImpossibleLabyrinth | 36 rooms, SLAM-style mapping |
+
+### 4. Trap (New Mechanics) — 4 tests × 5 seeds = 20 instances
+
+New level types designed to break specific solver strategies:
+
+| Test | D | What's Different |
+|------|---|-----------------|
+| **Red Herring** | 55 | 4 keys visible, only 1 matches the locked door. Grab the wrong key and waste moves. |
+| **Shuttle** | 60 | Ferry a ball across 2 locked doors. Requires 10+ inventory swaps (pickup key, unlock, drop key, go back, pickup ball, carry through, repeat). |
+| **One-Way Corridor** | 65 | Doors lock behind you after you walk through (via wrapper). Must pick up the next key BEFORE proceeding. No backtracking. |
+| **Tight Labyrinth** | 70 | 36-room maze with a strict step limit of 300. Near-optimal pathfinding required. |
+
+**Solver interface:** Use `solve_with_env(env)` — the environment is pre-created with any special wrappers applied. For Red Herring, Shuttle, and Tight Labyrinth, `solve(env_name, seed)` also works. One-Way Corridor requires `solve_with_env` because the wrapper changes behavior.
+
+## Running the Suite
+
+```bash
+python challenge.py suite my_solver          # all 142 instances
+python challenge.py suite my_solver classic  # just classic (72)
+python challenge.py suite my_solver blind    # just blind (25)
+python challenge.py suite my_solver fog      # just fog (25)
+python challenge.py suite my_solver trap     # just trap (20)
+python challenge.py suite my_solver child    # blind + fog + trap (70)
+```
 
 ## Viewing Levels
 
 ```bash
-python challenge.py list                # List all levels + tests
-python challenge.py show <level_id> 42  # View a level grid
-python challenge.py verify <level_id> 42 "right forward toggle forward"
+python challenge.py list                          # all levels and tests
+python challenge.py show <level_id> <seed>        # ASCII grid view
+python challenge.py verify <level_id> <seed> "action1 action2 ..."
 ```
 
-## Writing Your Solver
+The `show` command gives you an ASCII view of the grid with object positions. Use this to understand level layouts.
 
-Create a Python module implementing one or more of these functions:
+## Imports for Your Solver
 
 ```python
-# my_solver.py
-
-def solve(env_name, seed):
-    """Classic open mode. Return action list."""
-    ...
-    return ["right", "forward", "toggle", ...]
-
-def solve_with_env(env):
-    """Classic open mode with pre-reset env. Step it directly."""
-    ...
-    return success, actions
-
-def solve_blind(grid_info, mission):
-    """Blind mode. Grid snapshot + mission text. No env.step().
-    Must plan complete action sequence from static grid state."""
-    ...
-    return ["right", "forward", "toggle", ...]
-
-def solve_fog(fog_env):
-    """Fog mode. Partial observability. 7x7 view only.
-    Must explore, map, and solve using fog_env.step()."""
-    ...
-    return success, actions
-```
-
-Run the suite:
-
-```bash
-python challenge.py suite my_solver          # all sections
-python challenge.py suite my_solver classic  # just classic
-python challenge.py suite my_solver blind    # just blind
-python challenge.py suite my_solver fog      # just fog
-python challenge.py suite my_solver trap     # just trap
-python challenge.py suite my_solver child    # blind+fog+trap
-```
-
-## Difficulty Tiers
-
-### Classic Levels (open mode)
-
-| Tier | Levels | What's Involved |
-|------|--------|-----------------|
-| **Easy** (D1-3) | GoTo variants, Open Door | Navigate to an object or open a door. Single room. |
-| **Medium** (D4-6) | Pickup, Unlock, Maze | Pick up objects, use keys, multi-room with open doors. |
-| **Hard** (D7-9) | KeyCorridor, BlockedUnlock, Boss | Keys behind doors, blocked paths, compound missions. |
-| **Nightmare** (D10-13) | KeyChain, MegaMaze, Backtrack, Compound | Chained keys, 16-room mazes, 150+ step solutions. |
-| **Impossible** (D15) | Labyrinth | 36-room maze, 60 closed doors, 200-500 steps. |
-| **Ultra** (D20-25) | Gauntlet, Labyrinth+ | 16-64 rooms, locked door chains, compound missions, 500-1000+ steps. |
-
-### ChildAI Tests (new)
-
-| Mode | Test | D | What's Hard |
-|------|------|---|-------------|
-| **Blind** | Maze Navigation | 30 | Plan path through closed-door maze from grid snapshot |
-| **Blind** | Unlock + Pickup | 32 | Key + door + pickup. Must simulate inventory in code |
-| **Blind** | Key Chain | 35 | 3-key dependency chain. Plan 80+ actions with no env |
-| **Blind** | Compound Mission | 37 | Multi-step mission. Plan put-next-to then pickup |
-| **Blind** | Labyrinth | 39 | 36 rooms. Plan 200+ perfect actions from one snapshot |
-| **Fog** | GoTo Object | 40 | Find object with 7x7 view. Simple exploration |
-| **Fog** | Maze Navigation | 43 | Closed-door maze. Must explore room by room |
-| **Fog** | Unlock Door | 45 | Find key somewhere in the grid, then find the door |
-| **Fog** | Mega Maze | 48 | 16-room maze. Full exploration + backtracking |
-| **Fog** | Labyrinth | 50 | 36 rooms. SLAM-style mapping from partial obs |
-| **Trap** | Red Herring | 55 | 4 keys, only 1 is correct. Must reason about colors |
-| **Trap** | Shuttle | 60 | Ferry ball across 2 locked doors. 10+ inventory swaps |
-| **Trap** | One-Way Corridor | 65 | Doors lock behind you. Forward-only planning |
-| **Trap** | Tight Labyrinth | 70 | 36 rooms, step limit 300. Near-optimal path required |
-
-## Key Concepts
-
-- **Rooms** are separated by walls with doors between them.
-- **Closed doors** can be toggled open by facing them and using `toggle`.
-- **Locked doors** require the matching colored key. Pick up the key, face the door, `toggle`.
-- **Inventory** — you can only carry one object at a time. `drop` to make room.
-- **Compound missions** — "pick up X and put Y next to Z" requires completing multiple sub-tasks.
-- **"Go to"** completes when you are adjacent to and facing the target.
-- **"Put X next to Y"** — pick up X, navigate near Y, drop X adjacent to Y.
-
-## Engine API
-
-```python
-from engine.grid import (
-    get_grid_info,    # Returns dict: grid, pos, dir, carrying, w, h
-    find_objects,     # Find objects by type/color
-    render_grid,      # ASCII rendering
-    grid_to_dict,     # JSON-serializable grid state (used for blind mode)
-    ACTION_MAP,       # {'left': 0, 'right': 1, 'forward': 2, ...}
-    DIR_DELTAS,       # {0: (1,0), 1: (0,1), 2: (-1,0), 3: (0,-1)}
-    DIR_NAMES,        # {0: 'right', 1: 'down', 2: 'left', 3: 'up'}
+import gymnasium as gym
+from babyai_api import (
+    ACTION_MAP,      # {'left': 0, 'right': 1, 'forward': 2, ...}
+    ACTION_NAMES,    # {0: 'left', 1: 'right', ...}
+    DIR_DELTAS,      # {0: (1,0), 1: (0,1), 2: (-1,0), 3: (0,-1)}
+    DIR_NAMES,       # {0: 'right', 1: 'down', 2: 'left', 3: 'up'}
+    OBJ_TYPES,       # {0: 'unseen', 1: 'empty', ...}
+    COLORS,          # {0: 'red', 1: 'green', ...}
+    DOOR_STATES,     # {0: 'open', 1: 'closed', 2: 'locked'}
+    decode_obs,      # Decode 7x7x3 observation
+    view_to_world,   # Agent-relative → world coordinates
 )
-
-from engine.wrappers import (
-    FogEnv,            # Partial-obs wrapper (used by harness, not you)
-    OneWayDoorWrapper, # One-way doors (used by harness, not you)
-    decode_obs,        # Decode 7x7x3 observation into readable objects
-    view_to_world,     # Convert agent-relative coords to world coords
-    OBJ_TYPES,         # {0: 'unseen', 1: 'empty', 2: 'wall', ...}
-    COLORS,            # {0: 'red', 1: 'green', 2: 'blue', ...}
-    DOOR_STATES,       # {0: 'open', 1: 'closed', 2: 'locked'}
-)
-
-from engine.levels import ALL_LEVELS   # Classic level definitions
-from engine.child import CHILD_TESTS   # ChildAI test definitions
 ```
 
-Good luck!
+## Difficulty Overview
+
+| Section | Instances | Key Challenge |
+|---------|-----------|---------------|
+| Classic Easy-Medium (D1-6) | 39 | Navigate, open doors, use keys |
+| Classic Hard (D7-9) | 9 | Keys behind doors, compound missions |
+| Classic Nightmare (D10-13) | 12 | Key chains, 16-room mazes, backtracking |
+| Classic Impossible-Ultra (D15-25) | 12 | 36-64 rooms, locked chains, 500+ steps |
+| Blind (D30-39) | 25 | Plan entire solution from a static snapshot |
+| Fog (D40-50) | 25 | Explore and solve with 7×7 view only |
+| Trap (D55-70) | 20 | Decoy keys, inventory shuttling, one-way doors, tight limits |
+
+Good luck.

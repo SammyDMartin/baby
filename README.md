@@ -47,13 +47,15 @@ A harder evolution of the [BabyAI](https://github.com/Farama-Foundation/Minigrid
 
 ## Rules & Integrity
 
-1. **Do NOT read files in `solvers/`.** Reference solutions live there.
-2. **Do NOT search the web** for BabyAI solver implementations.
-3. **Do NOT use git history** to recover deleted solver code.
-4. **Do NOT read `docs/data.json`.**
-5. **Write your own solution** from scratch.
+Like the original BabyAI benchmark, agents interact only through the programmatic interface — not by reading source code.
 
-You may freely read: `engine/`, `challenge.py`, and other non-solver files.
+1. **Do NOT read ANY `.py` source files** — not `engine/`, not `solvers/`, not `challenge.py`. None.
+2. **Do NOT read `docs/data.json`** — contains traces from previous runs.
+3. **Do NOT search the web** for BabyAI solver code or walkthroughs.
+4. **Do NOT use git history** to recover deleted code or data.
+5. **Write your own solution** from scratch, using only the documented interfaces.
+
+**You may:** read `CLAUDE.md` (your briefing), `README.md`, and `babyai_api.py` (public constants/helpers). You may **run** `challenge.py` commands. That's it.
 
 ## Quick Start
 
@@ -72,22 +74,18 @@ python challenge.py suite my_solver fog      # Just fog
 python challenge.py suite my_solver trap     # Just trap
 ```
 
-**Full instructions in [CLAUDE.md](CLAUDE.md)** — grid mechanics, solver interfaces, observation encoding, engine API.
+**Full instructions in [CLAUDE.md](CLAUDE.md)** — grid mechanics, solver interfaces, observation encoding.
 
 ## Project Structure
 
 ```
-CLAUDE.md              # Challenge instructions (read this first)
-challenge.py           # View levels, verify solutions, run test suite
-engine/
-  grid.py              # Grid state extraction, rendering, constants
-  levels.py            # Standard + Nightmare level definitions
-  impossible.py        # Impossible Labyrinth definition
-  ultra.py             # Ultra-tier level definitions
-  child.py             # ChildAI level classes + test specifications
-  wrappers.py          # FogEnv, OneWayDoorWrapper, obs decode helpers
+CLAUDE.md              # Briefing — your complete reference (READ THIS)
+README.md              # This file
+babyai_api.py          # Public API — constants and helpers (you may read + import)
+challenge.py           # Harness — run but do NOT read source
+engine/                # Infrastructure — DO NOT READ
+solvers/               # Reference solutions — DO NOT READ
 docs/                  # Web visualizer (GitHub Pages)
-solvers/               # REFERENCE SOLUTIONS — do not read if attempting the challenge
 ```
 
 ## Writing Your Solver
